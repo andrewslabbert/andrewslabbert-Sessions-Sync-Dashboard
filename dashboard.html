@@ -1,0 +1,730 @@
+<!DOCTYPE html>
+<html lang="en" data-theme="dark"> <!-- Default theme is dark -->
+<head>
+    <meta charset="UTF-8">
+    <!-- Viewport meta tag is added by Apps Script doGet -->
+    <title>Sessions Sync Dashboard</title> <!-- Title set by Apps Script doGet -->
+    <script src="https://unpkg.com/feather-icons"></script>
+    <!-- Base CSS included to prevent flash of unstyled content -->
+    <style>
+        /* --- Configuration: Default Dark Mode --- */
+        :root {
+            --bg-primary-dark: #1a1d24; --bg-secondary-dark: #252932; --bg-tertiary-dark: #313641;
+            --text-primary-dark: #e0e6f0; --text-secondary-dark: #a0a8b4; --text-tertiary-dark: #767f8d;
+            --accent-primary-dark: #00f5d4; --accent-secondary-dark: #00bfa5; --color-success-dark: #34d399;
+            --color-warning-dark: #f59e0b; --color-error-dark: #f43f5e; --border-color-dark: #3e4450;
+            --border-highlight-dark: var(--accent-primary-dark); --placeholder-color-dark: #5a6372;
+            --shadow-color-dark: rgba(0, 245, 212, 0.1); --button-primary-text-dark: var(--bg-primary-dark);
+        }
+        /* --- Configuration: Light Mode --- */
+        :root[data-theme="light"] {
+            --bg-primary-light: #f8f9fa; --bg-secondary-light: #ffffff; --bg-tertiary-light: #e9ecef;
+            --text-primary-light: #212529; --text-secondary-light: #495057; --text-tertiary-light: #6c757d;
+            --accent-primary-light: #00a991; --accent-secondary-light: #007d6a; --color-success-light: #198754;
+            --color-warning-light: #ffc107; --color-error-light: #dc3545; --border-color-light: #dee2e6;
+            --border-highlight-light: var(--accent-primary-light); --placeholder-color-light: #adb5bd;
+            --shadow-color-light: rgba(0, 169, 145, 0.2); --button-primary-text-light: #ffffff;
+        }
+        /* --- Theme Variable Mapping --- */
+        :root {
+            --bg-primary: var(--bg-primary-dark); --bg-secondary: var(--bg-secondary-dark); --bg-tertiary: var(--bg-tertiary-dark);
+            --text-primary: var(--text-primary-dark); --text-secondary: var(--text-secondary-dark); --text-tertiary: var(--text-tertiary-dark);
+            --accent-primary: var(--accent-primary-dark); --accent-secondary: var(--accent-secondary-dark); --color-success: var(--color-success-dark);
+            --color-warning: var(--color-warning-dark); --color-error: var(--color-error-dark); --border-color: var(--border-color-dark);
+            --border-highlight: var(--border-highlight-dark); --placeholder-color: var(--placeholder-color-dark);
+            --shadow-color: var(--shadow-color-dark); --button-primary-text: var(--button-primary-text-dark);
+            --font-family: 'Inter', -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+            --border-radius: 8px; --transition-speed: 0.3s; --fast-transition-speed: 0.15s;
+        }
+        :root[data-theme="light"] {
+            --bg-primary: var(--bg-primary-light); --bg-secondary: var(--bg-secondary-light); --bg-tertiary: var(--bg-tertiary-light);
+            --text-primary: var(--text-primary-light); --text-secondary: var(--text-secondary-light); --text-tertiary: var(--text-tertiary-light);
+            --accent-primary: var(--accent-primary-light); --accent-secondary: var(--accent-secondary-light); --color-success: var(--color-success-light);
+            --color-warning: var(--color-warning-light); --color-error: var(--color-error-light); --border-color: var(--border-color-light);
+            --border-highlight: var(--border-highlight-light); --placeholder-color: var(--placeholder-color-light);
+            --shadow-color: var(--shadow-color-light); --button-primary-text: var(--button-primary-text-light);
+        }
+        /* --- Base & Reset --- */
+        *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+        html { font-size: 16px; scroll-behavior: smooth; color-scheme: dark light; transition: background-color var(--transition-speed) ease, color var(--transition-speed) ease; }
+        body { font-family: var(--font-family); background-color: var(--bg-primary); color: var(--text-primary); line-height: 1.6; min-height: 100vh; display: flex; justify-content: center; align-items: flex-start; padding: 2rem 1rem; transition: background-color var(--transition-speed) ease, color var(--transition-speed) ease; }
+
+        /* --- Layout --- */
+        .dashboard-container {
+            position: relative; /* Needed for absolute positioning of theme switch */
+            width: 100%;
+            max-width: 1200px; /* Maintain max width */
+            display: flex;
+            flex-direction: column;
+            gap: 2rem;
+        }
+        header { text-align: center; margin-bottom: 0.5rem; }
+        header h1 { font-size: 2rem; font-weight: 600; color: var(--text-primary); margin-bottom: 0.25rem; }
+        header p { color: var(--text-secondary); font-size: 1rem; }
+
+        /* --- Top Right Theme Switch --- */
+        .top-right-theme-switch {
+            position: absolute;
+            top: 1rem; /* Adjust as needed */
+            right: 1rem; /* Adjust as needed */
+            z-index: 15; /* Ensure it's above header if overlaps */
+            display: flex; /* Keep its internal layout */
+            align-items: center;
+            gap: 0.5rem;
+        }
+        .theme-switch { display: inline-block; height: 22px; position: relative; width: 44px; }
+        .theme-switch input { display:none; }
+        .slider { background-color: var(--bg-tertiary); bottom: 0; cursor: pointer; left: 0; position: absolute; right: 0; top: 0; transition: var(--transition-speed); border-radius: 22px; border: 1px solid var(--border-color); }
+        .slider:before { background-color: var(--text-secondary); bottom: 2px; content: ""; height: 16px; left: 3px; position: absolute; transition: var(--transition-speed); width: 16px; border-radius: 50%; }
+        input:checked + .slider { background-color: var(--accent-secondary); }
+        input:checked + .slider:before { transform: translateX(22px); background-color: var(--bg-secondary); }
+        .top-right-theme-switch .icon { stroke: var(--text-tertiary); width: 18px; height: 18px; }
+
+
+        /* --- Sync Control --- */
+        .sync-control {
+            padding: 0.5rem 0;
+            display: flex;
+            flex-wrap: wrap;
+            justify-content: space-between;
+            align-items: center;
+            gap: 1rem;
+            border-bottom: 1px solid var(--border-color);
+            padding-bottom: 1.5rem;
+        }
+        .button-group { display: flex; gap: 0.75rem; margin-left: auto; align-items: center; }
+        .sync-status { display: flex; align-items: center; gap: 0.5rem; color: var(--text-secondary); font-size: 0.9rem; }
+        .sync-status .icon { width: 16px; height: 16px; }
+        .status-indicator { width: 10px; height: 10px; border-radius: 50%; transition: background-color var(--transition-speed) ease; }
+        .status-idle { background-color: var(--text-tertiary); }
+        .status-syncing { background-color: var(--color-warning); animation: pulse 1.5s infinite ease-in-out; }
+        .status-success { background-color: var(--color-success); }
+        .status-error { background-color: var(--color-error); }
+        @keyframes pulse { 0%, 100% { opacity: 1; } 50% { opacity: 0.5; } }
+
+        /* --- Buttons --- */
+        .sync-button, .secondary-button { border: none; padding: 0.7rem 1.5rem; font-size: 1rem; font-weight: 600; border-radius: var(--border-radius); cursor: pointer; display: inline-flex; align-items: center; gap: 0.6rem; transition: all var(--transition-speed) ease; white-space: nowrap; }
+        .sync-button { background: linear-gradient(45deg, var(--accent-secondary), var(--accent-primary)); color: var(--button-primary-text); box-shadow: 0 4px 15px var(--shadow-color); }
+        .sync-button:hover:not(:disabled) { transform: translateY(-2px); box-shadow: 0 6px 20px var(--shadow-color); filter: brightness(1.1); }
+        .sync-button:active:not(:disabled) { transform: translateY(0); box-shadow: 0 2px 10px var(--shadow-color); }
+        .sync-button:disabled { opacity: 0.6; cursor: not-allowed; }
+        .sync-button .icon { width: 18px; height: 18px; }
+        .last-sync-info {
+            color: var(--text-tertiary);
+            font-size: 0.9rem;
+            flex-shrink: 0; /* Prevent shrinking */
+            text-align: right;
+            margin-right: 1rem; /* Space before button group */
+        }
+        .last-sync-info .icon { width: 14px; height: 14px; vertical-align: middle; margin-right: 0.3rem; stroke: var(--text-tertiary); }
+
+        /* --- Icon Button Styling (for Copy and More Options) --- */
+        .icon-button {
+            background: none;
+            border: none;
+            padding: 0.3rem; /* Small padding for click area */
+            margin: 0;
+            cursor: pointer;
+            color: var(--text-tertiary);
+            display: inline-flex;
+            align-items: center;
+            justify-content: center;
+            border-radius: 50%; /* Make it circular */
+            transform: scale(1); /* Define base scale */
+            transition: background-color var(--fast-transition-speed) ease,
+                        color var(--fast-transition-speed) ease,
+                        transform var(--fast-transition-speed) ease; /* Add transform */
+        }
+        .icon-button:hover { background-color: var(--bg-tertiary); color: var(--text-primary); }
+        .icon-button .icon { stroke: currentColor; /* Icon color inherits button color */ width: 18px; height: 18px; transition: stroke var(--fast-transition-speed) ease; }
+
+        /* --- Copy Button Feedback --- */
+        .copy-log-button.copied { transform: scale(1.1); /* Button scales up briefly */ }
+        .copy-log-button.copied .icon { stroke: var(--color-success); /* Change icon color to success */ }
+        :root[data-theme="light"] .copy-log-button.copied .icon { stroke: var(--color-success-light); }
+
+        /* --- Metrics Section --- */
+        .metrics {
+            display: grid;
+            /* Adjust grid for 2 cards: Sessions + Duration */
+            grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); /* Allow wider cards */
+            gap: 1.5rem;
+        }
+        .metric-card { background-color: var(--bg-secondary); padding: 1.5rem; border-radius: var(--border-radius); border: 1px solid var(--border-color); display: flex; flex-direction: column; gap: 0.5rem; transition: background-color var(--transition-speed) ease, border-color var(--fast-transition-speed) ease; overflow: hidden; }
+        .metric-card:hover { background-color: var(--bg-tertiary); }
+        .metric-updated-highlight { border-left: 4px solid var(--border-highlight) !important; }
+        .metric-error-highlight { border-left: 4px solid var(--color-error) !important; }
+        .metric-header { display: flex; justify-content: space-between; align-items: center; color: var(--text-secondary); font-size: 0.85rem; text-transform: uppercase; letter-spacing: 0.5px; margin-bottom: 0.5rem; }
+        .metric-header .icon { width: 18px; height: 18px; stroke: var(--text-tertiary); }
+        .metric-value { font-size: 2rem; font-weight: 600; color: var(--text-primary); line-height: 1.2; transition: transform var(--fast-transition-speed) ease-out, color var(--fast-transition-speed) ease-out; }
+        .metric-value.placeholder { color: var(--placeholder-color); font-size: 1.75rem; }
+        .metric-value-pop { transform: scale(1.1); color: var(--accent-primary); animation: popBack var(--transition-speed) ease-out forwards var(--fast-transition-speed); }
+        @keyframes popBack { to { transform: scale(1.0); color: var(--text-primary); } }
+        .metric-subtext { font-size: 0.85rem; color: var(--text-tertiary); margin-top: auto; } /* Push to bottom */
+
+        /* --- Lower Section --- */
+        .lower-section { display: grid; grid-template-columns: 1fr 1fr; gap: 1.5rem; }
+        .log-column { background-color: var(--bg-secondary); border-radius: var(--border-radius); padding: 1.5rem; display: flex; flex-direction: column; height: 400px; border: 1px solid var(--border-color); }
+        .log-column h2 {
+            display: flex; justify-content: space-between; align-items: center;
+            font-size: 1.2rem; font-weight: 600; margin-bottom: 1rem; color: var(--text-primary);
+            border-bottom: 1px solid var(--border-color); padding-bottom: 0.75rem; gap: 0.5rem;
+        }
+        .log-column h2 span { display: flex; align-items: center; gap: 0.5rem; } /* Wraps text + icon */
+        .log-column h2 .icon { width: 18px; height: 18px; stroke: var(--text-secondary); }
+        .copy-log-button { margin-left: auto; /* Explicitly push right */ }
+        .item-list { list-style: none; flex-grow: 1; overflow-y: auto; padding-right: 0.5rem; }
+        .item-list::-webkit-scrollbar { width: 6px; }
+        .item-list::-webkit-scrollbar-track { background: var(--bg-tertiary); border-radius: 3px; }
+        .item-list::-webkit-scrollbar-thumb { background-color: var(--text-tertiary); border-radius: 3px; }
+        .item-list::-webkit-scrollbar-thumb:hover { background-color: var(--text-secondary); }
+        .item-list li { padding: 0.6rem 0.25rem; border-bottom: 1px solid var(--border-color); display: flex; align-items: flex-start; gap: 0.75rem; font-size: 0.9rem; color: var(--text-primary); }
+        .item-list li:last-child { border-bottom: none; }
+        .item-list .icon { width: 16px; height: 16px; flex-shrink: 0; margin-top: 0.15em; stroke-width: 2.5; }
+        .item-list .log-message { flex-grow: 1; word-break: break-word; }
+        .item-list .log-message.success-summary { color: var(--accent-primary); font-weight: 500;}
+
+        /* Status/Log specific styles */
+        .status-icon-checking, .status-icon-loader { color: var(--color-warning); }
+        .status-icon-new { color: var(--color-success); }
+        .status-icon-updated, .status-icon-warning { color: var(--color-warning); }
+        .status-icon-error, .status-icon-failed, .status-icon-alert-triangle, .status-icon-x-octagon, .status-icon-trash-2 { color: var(--color-error); }
+        .status-icon-complete, .status-icon-check-circle { color: var(--accent-primary); }
+        .status-icon-info, .status-icon-chevrons-right, .status-icon-coffee, .status-icon-skipped, .status-icon-skip-forward { color: var(--text-tertiary); }
+        /* Update generic icons */
+        .status-icon-play-circle, /* New for Sessions */
+        .status-icon-zap, .status-icon-copy, .status-icon-more-vertical, .status-icon-list, .status-icon-align-left,
+        .status-icon-link, .status-icon-settings /* For Options Menu */
+         { color: var(--text-tertiary); }
+
+
+        /* --- 3-Dot Options Menu Styling --- */
+        .options-menu-container { position: relative; display: inline-block; }
+        .options-menu-button { margin-left: 0.5rem; }
+        .options-menu {
+            position: absolute; top: calc(100% + 5px); right: 0; background-color: var(--bg-secondary);
+            border-radius: var(--border-radius); border: 1px solid var(--border-color);
+            box-shadow: 0 4px 12px rgba(0, 0, 0, 0.1), 0 1px 3px rgba(0,0,0,0.08);
+            z-index: 10; min-width: 220px; padding: 0.5rem 0; list-style: none; margin: 0;
+            opacity: 1; visibility: visible; transform: translateY(0);
+            transition: opacity var(--fast-transition-speed) ease, visibility var(--fast-transition-speed) ease, transform var(--fast-transition-speed) ease;
+        }
+        .options-menu.hidden { opacity: 0; visibility: hidden; transform: translateY(-5px); pointer-events: none; }
+        .options-menu ul { list-style: none; padding: 0; margin: 0; }
+        .options-menu li a {
+            display: flex; align-items: center; gap: 0.75rem; padding: 0.6rem 1rem;
+            color: var(--text-primary); text-decoration: none; font-size: 0.9rem;
+            white-space: nowrap; transition: background-color var(--fast-transition-speed) ease;
+        }
+        .options-menu li a:hover { background-color: var(--bg-tertiary); color: var(--accent-primary); }
+        .options-menu .menu-icon { width: 16px; height: 16px; stroke-width: 2; color: var(--text-secondary); }
+        .options-menu li a:hover .menu-icon { color: var(--accent-primary); }
+        /* Placeholder style if menu is empty */
+        .options-menu li.placeholder { padding: 0.6rem 1rem; color: var(--text-tertiary); font-style: italic; font-size: 0.9rem;}
+
+
+        /* --- Responsiveness --- */
+        @media (max-width: 992px) {
+            .lower-section { grid-template-columns: 1fr; }
+            .log-column { height: 350px; }
+            .metrics { grid-template-columns: repeat(auto-fit, minmax(180px, 1fr)); } /* Allow slightly smaller cards */
+         }
+        @media (max-width: 768px) {
+            body { padding: 1rem 0.5rem; }
+            .sync-control { flex-direction: column; align-items: stretch; gap: 1rem; }
+            .sync-status { order: 1; margin-bottom: 0; }
+            .last-sync-info { order: 2; text-align: left; margin-right: 0; margin-bottom: 0.5rem; }
+            .button-group { order: 3; width: 100%; justify-content: flex-end; }
+            .top-right-theme-switch { top: 0.5rem; right: 0.5rem; }
+            header h1 { font-size: 1.75rem; }
+            .metric-card { padding: 1rem; }
+            .metric-value { font-size: 1.75rem; }
+            .metric-value.placeholder { font-size: 1.5rem; }
+            .metrics { grid-template-columns: 1fr 1fr; } /* Force 2 columns */
+         }
+        @media (max-width: 576px) {
+            html { font-size: 15px; }
+            header h1 { font-size: 1.5rem; }
+            .button-group { flex-direction: row; justify-content: flex-end; gap: 0.5rem; width: auto; margin-left: auto; }
+            .sync-button { flex-grow: 1; } /* Allow sync button to take available space */
+            .metrics { grid-template-columns: 1fr; } /* Stack metrics on smallest screens */
+            .metric-value { font-size: 1.5rem; }
+            .metric-value.placeholder { font-size: 1.25rem; }
+            .lower-section { gap: 1rem; grid-template-columns: 1fr; }
+            .log-column { padding: 1rem; height: 300px; }
+            .log-column h2 { font-size: 1.1rem; padding-bottom: 0.5rem; margin-bottom: 0.75rem; }
+            .item-list li { padding: 0.6rem 0.1rem; font-size: 0.85rem; gap: 0.5rem; }
+        }
+    </style>
+</head>
+<body>
+
+    <div class="dashboard-container">
+        <!-- Theme Switcher -->
+        <div class="theme-switch-wrapper top-right-theme-switch">
+            <i data-feather="sun" class="icon"></i>
+            <label class="theme-switch" for="theme-checkbox">
+                <input type="checkbox" id="theme-checkbox" />
+                <div class="slider"></div>
+            </label>
+            <i data-feather="moon" class="icon"></i>
+        </div>
+
+        <header>
+            <h1>Sessions Sync Dashboard</h1>
+            <p>Sync Session Data from Airtable to Google Sheet</p>
+        </header>
+
+        <section class="sync-control">
+             <div class="sync-status" id="sync-status">
+                 <span class="status-indicator status-idle" id="status-indicator"></span>
+                 <span id="status-text">Idle</span>
+             </div>
+
+             <div class="last-sync-info" id="last-sync-info">
+                 <i data-feather="clock" class="icon"></i> Last Run: Never
+             </div>
+
+            <div class="button-group">
+                <button class="sync-button" id="syncButton">
+                    <i data-feather="refresh-cw" class="icon"></i>
+                    <span id="syncButtonText">Run Full Sync</span>
+                </button>
+
+                <!-- 3-Dot Options Menu (Optional - add links later if needed) -->
+                <div class="options-menu-container">
+                    <button class="icon-button options-menu-button" id="optionsMenuButton" aria-label="More options">
+                        <i data-feather="more-vertical" class="icon status-icon-more-vertical"></i>
+                    </button>
+                    <div id="optionsMenu" class="options-menu hidden">
+                        <ul>
+                           <!-- Add relevant links here later if needed -->
+                           <!-- Example:
+                           <li><a href="YOUR_AIRTABLE_BASE_LINK" target="_blank" rel="noopener noreferrer"><i data-feather="airplay" class="icon menu-icon"></i> Open Airtable Base</a></li>
+                           <li><a href="YOUR_GOOGLE_SHEET_LINK" target="_blank" rel="noopener noreferrer"><i data-feather="grid" class="icon menu-icon"></i> Open Google Sheet</a></li>
+                           -->
+                           <li class="placeholder">No options configured.</li>
+                        </ul>
+                    </div>
+                </div>
+                <!-- END: 3-Dot Options Menu -->
+            </div>
+        </section>
+
+        <section class="metrics" id="metrics-section">
+            <!-- Sessions Metric Card -->
+            <div class="metric-card" id="metric-card-sessions">
+                <div class="metric-header">
+                    <span>Sessions</span>
+                    <i data-feather="play-circle" class="icon status-icon-play-circle"></i> <!-- Changed Icon -->
+                </div>
+                <div class="metric-value" id="metric-sessions-changes">0</div>
+                <div class="metric-subtext">Total changes (Created + Updated)</div>
+            </div>
+            <!-- Duration Metric Card (Kept) -->
+            <div class="metric-card" id="metric-card-duration">
+                <div class="metric-header">
+                    <span>Duration</span>
+                    <i data-feather="zap" class="icon status-icon-zap"></i>
+                </div>
+                <div class="metric-value" id="metric-duration">0s</div>
+                <div class="metric-subtext">Total time for last sync</div>
+            </div>
+            <!-- Removed Partners & Venues Cards -->
+        </section>
+
+        <section class="lower-section">
+            <div class="log-column recent-activity">
+                 <h2><span><i data-feather="list" class="icon status-icon-list"></i>Recent Sync Summary</span></h2>
+                <ul class="item-list" id="recent-activity-list">
+                     <li><i data-feather='info' class='icon status-icon-info'></i> Dashboard ready.</li>
+                </ul>
+            </div>
+            <div class="log-column detailed-log">
+                 <h2>
+                    <span><i data-feather="align-left" class="icon status-icon-align-left"></i>Detailed Log</span>
+                    <button id="copyLogButton" class="icon-button copy-log-button" aria-label="Copy detailed log">
+                        <i data-feather="copy" class="icon status-icon-copy"></i>
+                    </button>
+                 </h2>
+                <ul class="item-list" id="detailed-log-list">
+                      <li><i data-feather='coffee' class='icon status-icon-coffee'></i> Waiting for sync to run...</li>
+                </ul>
+            </div>
+        </section>
+    </div>
+
+    <script>
+        // --- DOM Elements ---
+        let syncButton, syncButtonText, lastSyncInfo, statusIndicator, statusText;
+        let metricsSection, metricSessionsChanges, metricDuration; // Simplified metrics
+        let recentActivityList, detailedLogList;
+        let themeCheckbox, htmlElement;
+        let copyLogButton, optionsMenuButton, optionsMenu;
+
+        // --- Initial State ---
+        let isSyncing = false;
+
+        // --- Helper Functions ---
+        function setStatus(state, message) {
+            if (!statusIndicator || !statusText) return;
+            statusIndicator.className = `status-indicator status-${state}`;
+            statusText.textContent = message;
+        }
+
+        function addLog(htmlContent) {
+            if (!detailedLogList || !htmlContent) return;
+            const tempDiv = document.createElement('div');
+            tempDiv.innerHTML = htmlContent;
+            if (tempDiv.firstChild) {
+                detailedLogList.prepend(tempDiv.firstChild); // Add newest first
+            }
+        }
+
+        function addActivity(htmlContent) {
+             if (!recentActivityList || !htmlContent) return;
+             const tempDiv = document.createElement('div');
+             tempDiv.innerHTML = htmlContent;
+             if (tempDiv.firstChild) {
+                 recentActivityList.prepend(tempDiv.firstChild); // Add newest first
+             }
+        }
+
+        function formatDisplayTimestamp(isoTimestamp) {
+            if (!isoTimestamp) return 'Never';
+            try {
+                return new Date(isoTimestamp).toLocaleString([], { dateStyle: 'medium', timeStyle: 'short' });
+            } catch (e) { return 'Invalid Date'; }
+        }
+
+        function showLoadingState() {
+            if (!syncButton || !syncButtonText || !statusIndicator) return;
+            isSyncing = true;
+            syncButton.disabled = true;
+            syncButtonText.textContent = 'Syncing...';
+            setStatus('syncing', 'Sync in Progress...');
+            clearMetrics();
+            clearLogs();
+            addLog("<li><i data-feather='loader' class='icon status-icon-loader'></i> Triggered Full Sync via Dashboard...</li>");
+            addActivity("<li><i data-feather='loader' class='icon status-icon-loader'></i> Sync process initiated...</li>");
+            feather.replace();
+        }
+
+        function clearMetrics() {
+            const elementsToClear = [metricSessionsChanges, metricDuration];
+            elementsToClear.forEach(el => {
+                if (el) {
+                    el.textContent = '--';
+                    el.classList.add('placeholder');
+                    el.closest('.metric-card')?.classList.remove('metric-updated-highlight', 'metric-error-highlight');
+                }
+            });
+        }
+
+        function clearLogs() {
+            if (recentActivityList) recentActivityList.innerHTML = '';
+            if (detailedLogList) detailedLogList.innerHTML = '';
+        }
+
+        function updateMetric(element, value) {
+            if (!element) return;
+            const card = element.closest('.metric-card');
+            const numericValue = Number(value) || 0;
+
+            if (element.classList.contains('placeholder') || element.textContent !== String(numericValue)) {
+                element.textContent = numericValue;
+                element.classList.remove('placeholder');
+                if (numericValue > 0) {
+                    element.classList.add('metric-value-pop');
+                    element.addEventListener('animationend', () => {
+                        element.classList.remove('metric-value-pop');
+                    }, { once: true });
+                }
+            }
+            if (card) {
+                 card.classList.remove('metric-updated-highlight', 'metric-error-highlight'); // Clear both
+                 if (numericValue > 0) card.classList.add('metric-updated-highlight');
+            }
+        }
+
+        function updateDurationMetric(durationMs, hasErrors = false) {
+             if (!metricDuration) return;
+             const element = metricDuration;
+             const card = element.closest('.metric-card');
+             const durationSec = durationMs > 0 ? (durationMs / 1000).toFixed(1) + 's' : '0s';
+
+             if (element.classList.contains('placeholder') || element.textContent !== durationSec) {
+                 element.textContent = durationSec;
+                 element.classList.remove('placeholder');
+             }
+             if (card) {
+                  card.classList.remove('metric-updated-highlight', 'metric-error-highlight');
+                  if (hasErrors) card.classList.add('metric-error-highlight');
+             }
+        }
+
+        function showCopySuccessFeedback() {
+            if (!copyLogButton) return;
+            copyLogButton.classList.add('copied');
+            setTimeout(() => { if (copyLogButton) copyLogButton.classList.remove('copied'); }, 1500);
+        }
+
+        function tryExecCommandCopy(textToCopy) {
+            console.log("Attempting fallback copy method...");
+            const textArea = document.createElement("textarea");
+            textArea.style.position = 'fixed'; textArea.style.top = '-9999px'; textArea.style.left = '-9999px';
+            textArea.style.width = '2em'; textArea.style.height = '2em'; textArea.style.padding = '0';
+            textArea.style.border = 'none'; textArea.style.outline = 'none'; textArea.style.boxShadow = 'none';
+            textArea.style.background = 'transparent';
+            textArea.value = textToCopy; document.body.appendChild(textArea);
+            textArea.focus(); textArea.select();
+            let success = false;
+            try {
+                success = document.execCommand('copy');
+                if (success) { showCopySuccessFeedback(); }
+                else { alert("Failed to copy log using fallback method."); }
+            } catch (err) { alert("Error copying log using fallback: " + err); }
+            finally { document.body.removeChild(textArea); }
+            return success;
+        }
+
+        // --- Server Call Handlers ---
+        function handleSyncSuccess(result) {
+            console.log("Sync Result:", result);
+            if (!syncButton || !syncButtonText || !lastSyncInfo) { isSyncing = false; return; } // Basic check
+            isSyncing = false;
+            syncButton.disabled = false;
+            syncButtonText.textContent = 'Run Full Sync';
+
+            if (!result || !result.lastSyncResults) {
+                handleSyncFailure(new Error("Invalid result structure from server."));
+                return;
+            }
+
+            const status = result.lastSyncStatus || 'Unknown';
+            const resultsData = result.lastSyncResults;
+            const typeCounters = resultsData.typeCounters || {};
+            const totalErrors = resultsData.totalErrors || 0;
+            const hasErrors = totalErrors > 0;
+
+            setStatus(hasErrors ? 'error' : 'success', hasErrors ? 'Sync Completed with Errors' : 'Sync Completed');
+            lastSyncInfo.innerHTML = `<i data-feather="clock" class="icon"></i> Last Run: ${formatDisplayTimestamp(result.lastSyncTimestamp)}`;
+
+            // ** Update Metrics (Simplified for Sessions) **
+            const sessCounters = typeCounters.sessions || { created: 0, updated: 0 }; // Get session counters
+            updateMetric(metricSessionsChanges, (sessCounters.created || 0) + (sessCounters.updated || 0));
+            updateDurationMetric(result.lastSyncDuration || 0, hasErrors);
+
+            // Update Logs
+            clearLogs();
+            if (Array.isArray(resultsData.logs) && resultsData.logs.length > 0) {
+                resultsData.logs.forEach(logItem => addLog(logItem));
+            } else {
+                 addLog("<li><i data-feather='alert-circle' class='icon status-icon-warning'></i> Detailed log data not available.</li>");
+            }
+
+             // ** Update Recent Activity (Simplified Summary) **
+             let summaryText = ''; let summaryIcon = 'info'; let summaryClass = 'status-icon-info';
+             if (!hasErrors) {
+                 summaryIcon = 'check-circle'; summaryClass = 'status-icon-complete';
+                 const totalChanges = (sessCounters.created || 0) + (sessCounters.updated || 0);
+                 summaryText = `Sync complete. ${totalChanges} total changes processed for Sessions.`;
+             } else {
+                  summaryIcon = 'alert-triangle'; summaryClass = 'status-icon-error';
+                  summaryText = `Sync failed with ${totalErrors} error(s). Check detailed log.`;
+             }
+
+            // Add previous recent items (summary strings from Code.gs)
+            if (Array.isArray(resultsData.recentItems)) {
+                resultsData.recentItems.forEach(activityItem => {
+                     let icon = 'info'; let iconClass = 'status-icon-info';
+                     const lowerItem = String(activityItem).toLowerCase();
+                     if (lowerItem.includes('created') || lowerItem.includes('added')) { icon = 'plus-circle'; iconClass = 'status-icon-new'; }
+                     else if (lowerItem.includes('updated')) { icon = 'edit-2'; iconClass = 'status-icon-updated'; }
+                     else if (lowerItem.includes('deleted') || lowerItem.includes('removed')) { icon = 'trash-2'; iconClass = 'status-icon-error'; }
+                     else if (lowerItem.includes('skipped') || lowerItem.includes('checked') || lowerItem.includes('no changes')) { icon = 'skip-forward'; iconClass = 'status-icon-skipped'; }
+                     else if (lowerItem.includes('error')) { icon = 'alert-triangle'; iconClass = 'status-icon-error'; }
+                     addActivity(`<li><i data-feather='${icon}' class='icon ${iconClass}'></i> ${activityItem}</li>`);
+                 });
+             }
+             // Add the final summary line LAST (so it appears at the top)
+             addActivity(`<li><i data-feather='${summaryIcon}' class='icon ${summaryClass}'></i> <span class="log-message ${!hasErrors ? 'success-summary' : ''}">${summaryText}</span></li>`);
+
+            feather.replace(); // Re-render icons
+        }
+
+        function handleSyncFailure(error) {
+            console.error("Sync Failure:", error);
+            if (!syncButton || !syncButtonText || !lastSyncInfo || !metricDuration) { isSyncing = false; return; } // Basic check
+            isSyncing = false;
+            syncButton.disabled = false;
+            syncButtonText.textContent = 'Run Full Sync';
+            setStatus('error', 'Sync Failed');
+            clearMetrics();
+            metricDuration.closest('.metric-card')?.classList.add('metric-error-highlight');
+
+            const errorMsg = `Sync process failed: ${error.message || error.toString()}`;
+            const errorItem = `<li><i data-feather='x-octagon' class='icon status-icon-error'></i><span class="log-message">${errorMsg}</span></li>`;
+            clearLogs();
+            addLog(errorItem); addActivity(errorItem);
+
+            lastSyncInfo.innerHTML = `<i data-feather="clock" class="icon"></i> Last Run: Failed`;
+            feather.replace();
+        }
+
+        function updateDashboardInitial(data) {
+            console.log("Initial Data:", data);
+             if (!lastSyncInfo || !metricSessionsChanges) return; // Check key elements
+
+            if (!data || !data.lastSyncResults) {
+                 console.error("Failed to load valid initial dashboard data.");
+                 addLog("<li><i data-feather='alert-triangle' class='icon status-icon-error'></i>Could not load initial status.</li>");
+                 setStatus('error', 'Load Error');
+                 clearMetrics(); feather.replace();
+                 return;
+            }
+
+            const resultsData = data.lastSyncResults;
+            const typeCounters = resultsData.typeCounters || {};
+            const hasErrors = (resultsData.totalErrors || 0) > 0;
+            const lastStatus = data.lastSyncStatus || 'Unknown';
+
+            lastSyncInfo.innerHTML = `<i data-feather="clock" class="icon"></i> Last Run: ${formatDisplayTimestamp(data.lastSyncTimestamp)}`;
+            if (lastStatus.toLowerCase() === 'success') setStatus('success', 'Idle (Success)');
+            else if (lastStatus.toLowerCase() === 'failed') setStatus('error', 'Idle (Failed)');
+            else setStatus('idle', 'Idle');
+
+            // ** Update Metrics (Simplified for Sessions) **
+            const sessCounters = typeCounters.sessions || { created: 0, updated: 0 };
+            updateMetric(metricSessionsChanges, (sessCounters.created || 0) + (sessCounters.updated || 0));
+            updateDurationMetric(data.lastSyncDuration || 0, hasErrors);
+
+            // Populate Logs
+            clearLogs();
+            if (Array.isArray(resultsData.logs) && resultsData.logs.length > 0) {
+                resultsData.logs.forEach(logItem => addLog(logItem));
+            } else { addLog("<li><i data-feather='info' class='icon status-icon-info'></i>No previous detailed logs found.</li>"); }
+
+             // ** Populate Recent Activity (Simplified Summary) **
+             if (Array.isArray(resultsData.recentItems) && resultsData.recentItems.length > 0) {
+                  resultsData.recentItems.forEach(activityItem => {
+                     let icon = 'info'; let iconClass = 'status-icon-info';
+                     const lowerItem = String(activityItem).toLowerCase();
+                     if (lowerItem.includes('created') || lowerItem.includes('added')) { icon = 'plus-circle'; iconClass = 'status-icon-new'; }
+                     else if (lowerItem.includes('updated')) { icon = 'edit-2'; iconClass = 'status-icon-updated'; }
+                     else if (lowerItem.includes('deleted') || lowerItem.includes('removed')) { icon = 'trash-2'; iconClass = 'status-icon-error'; }
+                     else if (lowerItem.includes('skipped') || lowerItem.includes('checked') || lowerItem.includes('no changes')) { icon = 'skip-forward'; iconClass = 'status-icon-skipped'; }
+                     else if (lowerItem.includes('error')) { icon = 'alert-triangle'; iconClass = 'status-icon-error'; }
+                     addActivity(`<li><i data-feather='${icon}' class='icon ${iconClass}'></i> ${activityItem}</li>`);
+                 });
+             }
+             // Add a final summary from last run LAST (so it appears at top)
+             const summaryIcon = lastStatus === 'Success' ? 'check-circle' : (lastStatus === 'Failed' ? 'alert-triangle' : 'info');
+             const summaryClass = lastStatus === 'Success' ? 'status-icon-complete' : (lastStatus === 'Failed' ? 'status-icon-error' : 'status-icon-info');
+             const totalChanges = (sessCounters.created || 0) + (sessCounters.updated || 0);
+             const summaryText = lastStatus === 'Success' ? `Last sync completed successfully (${totalChanges} total changes).` : (lastStatus === 'Failed' ? `Last sync failed.` : `No previous summary available.`);
+             addActivity(`<li><i data-feather='${summaryIcon}' class='icon ${summaryClass}'></i> <span class="log-message ${lastStatus === 'Success' ? 'success-summary' : ''}">${summaryText}</span></li>`);
+
+            feather.replace(); // Render all icons
+        }
+
+
+        // --- Initial Load and Event Listener Assignment ---
+        window.addEventListener('load', () => {
+             console.log("Dashboard loaded.");
+
+             // Assign DOM Elements
+             syncButton = document.getElementById('syncButton');
+             syncButtonText = document.getElementById('syncButtonText');
+             lastSyncInfo = document.getElementById('last-sync-info');
+             statusIndicator = document.getElementById('status-indicator');
+             statusText = document.getElementById('status-text');
+             metricsSection = document.getElementById('metrics-section');
+             metricSessionsChanges = document.getElementById('metric-sessions-changes'); // Updated ID
+             metricDuration = document.getElementById('metric-duration');
+             recentActivityList = document.getElementById('recent-activity-list');
+             detailedLogList = document.getElementById('detailed-log-list');
+             themeCheckbox = document.getElementById('theme-checkbox');
+             htmlElement = document.documentElement;
+             copyLogButton = document.getElementById('copyLogButton');
+             optionsMenuButton = document.getElementById('optionsMenuButton');
+             optionsMenu = document.getElementById('optionsMenu');
+
+            // Basic check if elements were found
+            if (!syncButton || !themeCheckbox || !copyLogButton || !optionsMenuButton || !optionsMenu || !detailedLogList || !metricSessionsChanges) {
+                 console.error("CRITICAL ERROR: Failed to find essential UI elements on load.");
+                 setStatus('error', 'UI Load Error');
+                 return;
+             }
+
+            // --- Attach Event Listeners ---
+            syncButton.addEventListener('click', () => {
+                if (isSyncing) return;
+                showLoadingState();
+                google.script.run
+                    .withSuccessHandler(handleSyncSuccess)
+                    .withFailureHandler(handleSyncFailure)
+                    .runFullSync_Dashboard(); // This function name must match Code.gs
+            });
+
+            themeCheckbox.addEventListener('change', function() {
+                const theme = this.checked ? 'light' : 'dark';
+                htmlElement.setAttribute('data-theme', theme);
+                localStorage.setItem('theme', theme);
+                feather.replace();
+            });
+
+            copyLogButton.addEventListener('click', () => {
+                if (!detailedLogList) return;
+                const logItems = detailedLogList.querySelectorAll('li .log-message');
+                const logMessages = Array.from(logItems).map(item => item.textContent.trim()).reverse();
+                const logText = logMessages.join('\n');
+                if (logText) {
+                    if (navigator.clipboard && navigator.clipboard.writeText) {
+                        navigator.clipboard.writeText(logText).then(showCopySuccessFeedback).catch(err => tryExecCommandCopy(logText));
+                    } else { tryExecCommandCopy(logText); }
+                } else { alert("No log content to copy."); }
+            });
+
+            optionsMenuButton.addEventListener('click', (event) => {
+                event.stopPropagation();
+                optionsMenu.classList.toggle('hidden');
+                if (!optionsMenu.classList.contains('hidden')) feather.replace();
+            });
+
+             // --- Set Initial Theme ---
+            const savedTheme = localStorage.getItem('theme');
+            if (savedTheme) {
+                htmlElement.setAttribute('data-theme', savedTheme);
+                if (savedTheme === 'light') themeCheckbox.checked = true;
+            } else {
+                // Ensure checkbox matches default dark theme if no preference saved
+                themeCheckbox.checked = false;
+            }
+
+             // --- Fetch Initial Data ---
+             setStatus('idle', 'Loading...');
+             clearLogs();
+             addLog("<li><i data-feather='loader' class='icon status-icon-checking'></i> Loading previous sync status...</li>");
+             clearMetrics();
+             feather.replace(); // Render loading icons
+
+             google.script.run
+                 .withSuccessHandler(updateDashboardInitial)
+                 .withFailureHandler((err) => handleSyncFailure(new Error("Could not load initial data.")))
+                 .getDashboardData(); // This function name must match Code.gs
+
+        }); // End window load listener
+
+        // --- Listener to close menu when clicking outside ---
+        document.addEventListener('click', (event) => {
+            if (optionsMenu && optionsMenuButton && !optionsMenu.classList.contains('hidden') &&
+                !optionsMenuButton.contains(event.target) && !optionsMenu.contains(event.target)) {
+                optionsMenu.classList.add('hidden');
+            }
+        });
+
+    </script>
+
+</body>
+</html>
