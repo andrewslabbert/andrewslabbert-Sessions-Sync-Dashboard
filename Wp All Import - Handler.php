@@ -419,7 +419,7 @@ function wpaip_send_data_to_script($import_id, $import_data) {
     // **IMPORTANT**: Replace the URL below with the deployed URL
     //               of your DEDICATED "WP Callback Handler" Apps Script.
     // ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
-    $script_url = 'https://script.google.com/macros/s/AKfycbyTbdua6Xyltn45Rs1P1b1WaIYFigwKq1NuVyvGcVpKnduI-Ycy7sMlCoas2a0Pf5-u/exec';
+    $script_url = 'https://script.google.com/macros/s/AKfycbwHCsmZxZJOI3v-QeLMyNNDinv2UdEx9MvbCdKxOmBOc90Z-qO1ArRCHC-BLESgjmXX/exec';
     // =======================================================
 
 
