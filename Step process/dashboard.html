@@ -319,15 +319,18 @@
                 </button>
                 <div id="optionsMenu" class="options-menu hidden">
                     <ul>
-                       <!-- Add relevant links here -->
-                       <li><a href="YOUR_AIRTABLE_BASE_LINK" target="_blank" rel="noopener noreferrer"><i data-feather="airplay" class="icon menu-icon"></i> Open Airtable Base</a></li>
-                       <li><a href="YOUR_GOOGLE_SHEET_LINK" target="_blank" rel="noopener noreferrer"><i data-feather="grid" class="icon menu-icon"></i> Open Google Sheet</a></li>
-                       <!-- Cache Clear Moved Here -->
-                       <li><button id="clearCacheMenuButton"><i data-feather="wind" class="icon menu-icon"></i> Clear Website Cache</button></li>
-                       <!-- <li class="placeholder">No options configured.</li> -->
-                    </ul>
-                </div>
-            </div>
+                   <!-- Add relevant links here -->
+                   <li><a href="YOUR_AIRTABLE_BASE_LINK" target="_blank" rel="noopener noreferrer"><i data-feather="airplay" class="icon menu-icon"></i> Open Airtable Base</a></li>
+                   <li><a href="YOUR_GOOGLE_SHEET_LINK" target="_blank" rel="noopener noreferrer"><i data-feather="grid" class="icon menu-icon"></i> Open Google Sheet</a></li>
+                   <!-- Cache Clear Moved Here -->
+                   <li><button id="clearCacheMenuButton"><i data-feather="wind" class="icon menu-icon"></i> Clear Website Cache</button></li>
+
+                   <!-- !!! NEW BUTTON ADDED HERE !!! -->
+                   <li><button id="resetImportStatusButton"><i data-feather="zap-off" class="icon menu-icon"></i> Reset Stuck Import Status</button></li>
+
+                   <!-- <li class="placeholder">No options configured.</li> -->
+                </ul>
+            </div>                      
         </header>
 
         <!-- Stepper UI Container -->
@@ -443,6 +446,7 @@
         const SESSIONS_IMPORT_ID = <?= sessionsImportId ?> || null; // Get import ID passed from doGet
 
         // --- DOM Elements ---
+        let resetImportStatusButton;
         let themeCheckbox, htmlElement, copyLogButton, optionsMenuButton, optionsMenu, clearCacheMenuButton;
         let stepSync, indicatorSync, statusSync, detailsSync, buttonSync, buttonResync, buttonRetrySync;
         let stepImport, indicatorImport, statusImport, detailsImport, buttonImport, buttonReimport, buttonRetryImport, buttonCancelImport;
@@ -1035,6 +1039,15 @@
                  return;
              }
 
+
+             resetImportStatusButton = document.getElementById('resetImportStatusButton');
+            // Add to the basic check
+            if (!buttonSync || !buttonImport || !themeCheckbox || !copyLogButton || !optionsMenuButton || !optionsMenu || !clearCacheMenuButton || !resetImportStatusButton) { // Added resetImportStatusButton
+            console.error("CRITICAL ERROR: Failed to find essential UI elements on load.");
+             alert("Dashboard UI failed to load correctly. Please refresh or contact support.");
+             return;
+            }
+
             // --- Attach Event Listeners ---
 
             // Step 1: Sync
@@ -1147,6 +1160,33 @@
                  })
                  .getDashboardData(); // Fetches sheet sync AND wp status
 
+        // Options Menu: Reset Stuck Import Status
+resetImportStatusButton?.addEventListener('click', () => {
+    if (!SESSIONS_IMPORT_ID) {
+        alert("Error: Sessions Import ID is not configured. Cannot reset status.");
+        return;
+    }
+
+    // Confirmation Dialog - VERY IMPORTANT
+    const warningMsg = `WARNING:\n\n` +
+                     `This will manually clear the 'pending' status for the Sessions website update (Import ID: ${SESSIONS_IMPORT_ID}).\n\n` +
+                     `Only use this if the update process is DEFINITELY finished or cancelled, but the dashboard is still stuck showing 'Processing...'.\n\n` +
+                     `Clearing the status while an import is actively running could cause problems.\n\n` +
+                     `Are you sure you want to reset the status?`;
+
+    if (confirm(warningMsg)) {
+        addActivity(`Attempting manual reset for Sessions import status (ID: ${SESSIONS_IMPORT_ID})...`);
+        optionsMenu.classList.add('hidden'); // Close menu
+
+        google.script.run
+            .withSuccessHandler(handleClearImportStatusResult) // Use a generic handler
+            .withFailureHandler(handleClearImportStatusResult) // Use same handler, check result.success
+            .clearSpecificImportCache(SESSIONS_IMPORT_ID); // Pass the specific ID
+    }
+});
+
+                    
+
         }); // End window load listener
 
         // --- Listener to close menu when clicking outside ---
@@ -1156,6 +1196,31 @@
                 optionsMenu.classList.add('hidden');
             }
         });
+
+        function handleClearImportStatusResult(result) {
+    console.log("Clear Import Status Result:", result);
+    if (result && result.success) {
+        alert(`Success: ${result.message}`);
+        addActivity(`Manual status reset for Import ID ${SESSIONS_IMPORT_ID} successful.`);
+        // Refresh the dashboard state to reflect the change
+        stopPollingWpStatus(); // Ensure polling is stopped if it was running
+        currentWpRunId = null; // Clear tracked run ID
+        // Fetch the latest data to update the entire UI correctly
+        addLog("<li><i data-feather='refresh-cw' class='icon status-icon-info'></i><span class='log-message'>Refreshing dashboard data after manual status reset...</span></li>");
+        feather.replace();
+        google.script.run
+             .withSuccessHandler(updateDashboardInitial)
+             .withFailureHandler((err) => {
+                  console.error("Failed to reload data after cache clear:", err);
+                  addLog(`<li><i data-feather='alert-triangle' class='icon status-icon-error'></i><span class='log-message'>Error reloading dashboard status after reset: ${err.message || err}</span></li>`);
+             })
+             .getDashboardData();
+    } else {
+        const errorMsg = result ? result.message : "Unknown error occurred.";
+        alert(`Error: ${errorMsg}`);
+        addActivity(`Manual status reset for Import ID ${SESSIONS_IMPORT_ID} failed: ${errorMsg}`);
+    }
+}
 
     </script>
 
