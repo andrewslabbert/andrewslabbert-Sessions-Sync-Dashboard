@@ -678,55 +678,61 @@
         function handleSheetSyncResult(result) {
             console.log("Sheet Sync Result:", result);
 
-            // 1. Stop any visual "active" state for Sync step
-            // (updateStepUI will handle setting the new state below)
-
-            // 2. Add Logs from this specific run
-            // Clear logs *before* adding new ones if desired, or just prepend
-            // clearLogs(); // Optional: Clear logs before showing results of this run
+            // 1. Add Logs from this specific run to Detailed Log
+            // Prepending assumes result.lastSyncResults.logs contains HTML list items <li>...</li>
             result.lastSyncResults?.logs?.forEach(logItem => addLog(logItem));
-            result.lastSyncResults?.recentItems?.forEach(activityItem => addActivity(activityItem)); // Add server-side recent items
 
-            // 3. Update Step 1 (Sync) UI based on the result of THIS run
-            if (result.success) {
-                 const counters = result.lastSyncResults?.typeCounters?.sessions || {};
-                 const duration = result.lastSyncDuration;
+            // 2. Add Summary Message to Recent Activity (should be single summary now)
+            // Clear previous recent items before adding the new summary? Or just prepend? Prepend is usually better.
+            // recentActivityList.innerHTML = ''; // Optional: Clear previous activity
+            result.lastSyncResults?.recentItems?.forEach(activityItem => addActivity(activityItem));
+
+            // 3. Update Step 1 (Sync) UI based on the result
+            const syncCounters = result.lastSyncResults?.typeCounters?.sessions || {}; // Get counters for 'sessions'
+            const duration = result.lastSyncDuration;
+            const syncSuccess = result.success; // Use the boolean passed from server
+
+            if (syncSuccess) {
                  updateStepUI('sync', 'complete', {
                      statusText: `Sync Complete (${formatDuration(duration)}).`,
-                     detailsHtml: formatCounters(counters)
+                     // Use the helper to format counters into a readable string
+                     detailsHtml: formatCounters(syncCounters)
                  });
-                 addActivity("Session Sync Finished Successfully."); // Add clear activity summary
+                 // Add clear activity summary if server didn't already (belt & suspenders)
+                 // addActivity("Session Sync Finished Successfully.");
 
                  // 4. Update Step 2 (Import) UI - Make it Recommended
                  updateStepUI('import', 'recommended', {
                      statusText: 'Ready to update website.'
-                     // Keep existing details (last run info) or clear them? Keeping is probably fine.
-                     // detailsHtml: '' // Optionally clear previous import results here
+                     // Keep existing details from last import run
                  });
 
             } else {
                 // Sync Failed
+                // Use the error message provided in the result object
                 const errorMsg = result.error || "Unknown sync error.";
                  updateStepUI('sync', 'error', {
                      statusText: `Sync Failed: ${errorMsg}`
-                     // Optionally clear details on error
+                     // Clear details on error
                      // detailsHtml: ''
                  });
-                 addActivity(`Session Sync Failed: ${errorMsg}`);
+                 // Add clear activity summary for failure
+                 // addActivity(`Session Sync Failed: ${errorMsg}`);
 
                  // 4. Update Step 2 (Import) UI - Keep it Not Recommended
                  updateStepUI('import', 'not-recommended', {
                      statusText: "Run 'Sync Sessions' successfully first."
-                     // Keep existing details of last import run visible
+                     // Keep existing details from last import run
                  });
             }
 
-             // 5. Update Cache Clear button state based on *last known* WP status
-             // Check the current state of the import step to decide if cache clear should be enabled
+             // 5. Update Cache Clear button state (check if import step is complete)
              const importStepElement = document.getElementById('step-import');
              if (clearCacheMenuButton) {
                  clearCacheMenuButton.disabled = !(importStepElement?.classList.contains('step-complete'));
              }
+             // Ensure icons are refreshed after potential class changes/innerHTML updates
+             feather.replace();
         }
 
         
