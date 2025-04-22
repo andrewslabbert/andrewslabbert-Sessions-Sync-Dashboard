@@ -653,19 +653,20 @@
 
 
         // --- Polling Function ---
-        function startPollingWpStatus(importId) {
-            if (pollingIntervalId) clearInterval(pollingIntervalId); // Clear previous interval if any
+// --- Polling Function ---
+function startPollingWpStatus(importId) {
+    if (pollingIntervalId) clearInterval(pollingIntervalId); // Clear previous interval if any
 
-            addActivity(`Website Update (ID ${importId}) initiated. Checking status...`);
+    // REMOVED: addActivity(`Website Update (ID ${importId}) initiated. Checking status...`); // Removed as redundant
 
-            pollingIntervalId = setInterval(() => {
-                console.log("Polling WP status for import ID:", importId);
-                google.script.run
-                    .withSuccessHandler(handleWpImportStatusUpdate)
-                    .withFailureHandler(handlePollingFailure)
-                    .getImportStatus(importId);
-            }, POLLING_INTERVAL_MS);
-        }
+    pollingIntervalId = setInterval(() => {
+        console.log("Polling WP status for import ID:", importId);
+        google.script.run
+            .withSuccessHandler(handleWpImportStatusUpdate)
+            .withFailureHandler(handlePollingFailure)
+            .getImportStatus(importId);
+    }, POLLING_INTERVAL_MS);
+}
 
         function stopPollingWpStatus() {
              if (pollingIntervalId) {
@@ -741,25 +742,25 @@
 
         
         function handleWpImportInitiation(result) {
-             console.log("WP Import Initiation Result:", result);
-             result.log?.split('\n').forEach(logLine => addLog(`<li><i data-feather='chevrons-right' class='icon'></i><span class="log-message">${logLine}</span></li>`)); // Add initiation logs
+            console.log("WP Import Initiation Result:", result);
+            result.log?.split('\n').forEach(logLine => addLog(`<li><i data-feather='chevrons-right' class='icon'></i><span class="log-message">${logLine}</span></li>`)); // Add initiation logs
 
             if (result.success && result.runId && result.status.startsWith('initiated')) {
                 currentWpRunId = result.runId; // Store the run ID for this attempt
-                 updateStepUI('import', 'active', {
-                     statusText: 'Waiting for WordPress update to start...',
-                     activeButtonText: 'Initiated...' // Keep button disabled
-                 });
-                 addActivity(`Website Update (ID ${SESSIONS_IMPORT_ID}) triggered.`);
-                 // Start polling for status
-                 startPollingWpStatus(SESSIONS_IMPORT_ID);
+                updateStepUI('import', 'active', {
+                    statusText: 'Waiting for WordPress update to start...',
+                    activeButtonText: 'Initiated...' // Keep button disabled
+                });
+                addActivity("Website Update triggered."); // CHANGED: Removed ID from message
+                // Start polling for status
+                startPollingWpStatus(SESSIONS_IMPORT_ID);
             } else {
-                 // Initiation failed (WP error, HTTP error, timeout)
-                 updateStepUI('import', 'error', {
-                     statusText: `Update Failed to Start: ${result.message || 'Unknown initiation error.'}`
-                 });
-                 addActivity(`Website Update Failed to Start: ${result.message}`);
-                 currentWpRunId = null; // Reset run ID
+                // Initiation failed (WP error, HTTP error, timeout)
+                updateStepUI('import', 'error', {
+                    statusText: `Update Failed to Start: ${result.message || 'Unknown initiation error.'}`
+                });
+                addActivity(`Website Update Failed to Start: ${result.message}`);
+                currentWpRunId = null; // Reset run ID
             }
         }
 
@@ -820,21 +821,31 @@
         }
 
         function handleWpImportCompletion(statusResult) {
-             console.log("WP Import Complete:", statusResult);
-             const details = statusResult ? formatCounters(statusResult) : 'Details unavailable.';
-             const duration = (statusResult && statusResult.startTime && statusResult.endTime) ? formatDuration((statusResult.endTime - statusResult.startTime) * 1000) : '';
-             updateStepUI('import', 'complete', {
-                 statusText: `Website Update Complete ${duration ? `(${duration})` : ''}.`,
-                 detailsHtml: details
-             });
-             addActivity("Website Update Finished.");
-             currentWpRunId = null; // Clear run ID
+            console.log("WP Import Complete:", statusResult);
+            const details = statusResult ? formatCounters(statusResult) : 'Details unavailable.';
+            const duration = (statusResult && statusResult.startTime && statusResult.endTime) ? formatDuration((statusResult.endTime - statusResult.startTime) * 1000) : '';
+            updateStepUI('import', 'complete', {
+                statusText: `Website Update Complete ${duration ? `(${duration})` : ''}.`, // This uses "Complete"
+                detailsHtml: details + '<br/>Cache clear recommended.'
+            });
+            // *** CHANGE THIS LINE ***
+            addActivity("Website Update Complete."); // Changed "Finished" to "Complete" to match addActivity keyword check
+            currentWpRunId = null; // Clear run ID
 
-             // Make Cache Step Recommended (If we had Step 3)
-             // updateStepUI('cache', 'recommended', { statusText: 'Ready to clear cache.' });
+            // Show the Cache Clear button on Step 2
+            if (buttonClearCacheStep2) {
+                buttonClearCacheStep2.classList.remove('hidden');
+                buttonClearCacheStep2.disabled = false;
+                buttonClearCacheStep2.querySelector('.button-text').textContent = 'Clear Cache Now';
+            }
+            // Also enable the menu button
+            if (clearCacheMenuButton) {
+                clearCacheMenuButton.disabled = false;
+            }
 
-             // Make Sync Step Recommended again
-             updateStepUI('sync', 'recommended', { statusText: 'Ready to sync.'});
+            // Make Sync Step Recommended again
+            updateStepUI('sync', 'recommended', { statusText: 'Ready to sync.'});
+            feather.replace(); // Ensure icons update
         }
 
          function handleWpImportFailure(statusResult) {
@@ -997,55 +1008,45 @@
 
         // --- Initial Load and Event Listener Assignment ---
         window.addEventListener('load', () => {
-             console.log("Dashboard loaded.");
+            console.log("Dashboard loaded.");
 
-             // Assign DOM Elements
-             themeCheckbox = document.getElementById('theme-checkbox');
-             htmlElement = document.documentElement;
-             copyLogButton = document.getElementById('copyLogButton');
-             optionsMenuButton = document.getElementById('optionsMenuButton');
-             optionsMenu = document.getElementById('optionsMenu');
-             clearCacheMenuButton = document.getElementById('clearCacheMenuButton'); // Button in menu
+            // Assign DOM Elements
+            themeCheckbox = document.getElementById('theme-checkbox');
+            htmlElement = document.documentElement;
+            copyLogButton = document.getElementById('copyLogButton');
+            optionsMenuButton = document.getElementById('optionsMenuButton');
+            optionsMenu = document.getElementById('optionsMenu');
+            clearCacheMenuButton = document.getElementById('clearCacheMenuButton'); // Button in menu
 
-             // Step 1 Elements
-             stepSync = document.getElementById('step-sync');
-             indicatorSync = document.getElementById('indicator-sync');
-             statusSync = document.getElementById('status-sync');
-             detailsSync = document.getElementById('details-sync');
-             buttonSync = document.getElementById('button-sync');
-             buttonResync = document.getElementById('button-resync');
-             buttonRetrySync = document.getElementById('button-retry-sync');
+            // Step 1 Elements
+            stepSync = document.getElementById('step-sync');
+            indicatorSync = document.getElementById('indicator-sync');
+            statusSync = document.getElementById('status-sync');
+            detailsSync = document.getElementById('details-sync');
+            buttonSync = document.getElementById('button-sync');
+            buttonResync = document.getElementById('button-resync');
+            buttonRetrySync = document.getElementById('button-retry-sync');
 
-             // Step 2 Elements
-             stepImport = document.getElementById('step-import');
-             indicatorImport = document.getElementById('indicator-import');
-             statusImport = document.getElementById('status-import');
-             detailsImport = document.getElementById('details-import');
-             buttonImport = document.getElementById('button-import');
-             buttonReimport = document.getElementById('button-reimport');
-             buttonRetryImport = document.getElementById('button-retry-import');
-             buttonCancelImport = document.getElementById('button-cancel-import');
+            // Step 2 Elements
+            stepImport = document.getElementById('step-import');
+            indicatorImport = document.getElementById('indicator-import');
+            statusImport = document.getElementById('status-import');
+            detailsImport = document.getElementById('details-import');
+            buttonImport = document.getElementById('button-import');
+            buttonReimport = document.getElementById('button-reimport');
+            buttonRetryImport = document.getElementById('button-retry-import');
+            buttonCancelImport = document.getElementById('button-cancel-import');
 
-             // Step 3 Elements (Removed)
-
-             // Log Elements
-             recentActivityList = document.getElementById('recent-activity-list');
-             detailedLogList = document.getElementById('detailed-log-list');
+            // Log Elements
+            recentActivityList = document.getElementById('recent-activity-list');
+            detailedLogList = document.getElementById('detailed-log-list');
+            resetImportStatusButton = document.getElementById('resetImportStatusButton');
 
             // Basic check
-            if (!buttonSync || !buttonImport || !themeCheckbox || !copyLogButton || !optionsMenuButton || !optionsMenu || !clearCacheMenuButton) {
-                 console.error("CRITICAL ERROR: Failed to find essential UI elements on load.");
-                 alert("Dashboard UI failed to load correctly. Please refresh or contact support.");
-                 return;
-             }
-
-
-             resetImportStatusButton = document.getElementById('resetImportStatusButton');
-            // Add to the basic check
-            if (!buttonSync || !buttonImport || !themeCheckbox || !copyLogButton || !optionsMenuButton || !optionsMenu || !clearCacheMenuButton || !resetImportStatusButton) { // Added resetImportStatusButton
-            console.error("CRITICAL ERROR: Failed to find essential UI elements on load.");
-             alert("Dashboard UI failed to load correctly. Please refresh or contact support.");
-             return;
+            if (!buttonSync || !buttonImport || !themeCheckbox || !copyLogButton || !optionsMenuButton || !optionsMenu || !clearCacheMenuButton || !resetImportStatusButton) {
+                console.error("CRITICAL ERROR: Failed to find essential UI elements on load.");
+                alert("Dashboard UI failed to load correctly. Please refresh or contact support.");
+                return;
             }
 
             // --- Attach Event Listeners ---
@@ -1054,7 +1055,7 @@
             [buttonSync, buttonResync, buttonRetrySync].forEach(btn => {
                 btn?.addEventListener('click', () => {
                     updateStepUI('sync', 'active', { statusText: 'Syncing sessions...', activeButtonText: 'Syncing...' });
-                    addActivity("Started Session Sync.");
+                    addActivity("Started Session Sync."); // Keep this one
                     google.script.run
                         .withSuccessHandler(handleSheetSyncResult)
                         .withFailureHandler(handleSheetSyncResult) // Use same handler, check result.success
@@ -1062,53 +1063,50 @@
                 });
             });
 
-             // Step 2: Import
+            // Step 2: Import
             [buttonImport, buttonReimport, buttonRetryImport].forEach(btn => {
-                 btn?.addEventListener('click', () => {
-                     if (!SESSIONS_IMPORT_ID) {
-                         alert("Error: Website Update Import ID is not configured.");
-                         return;
-                     }
-                     updateStepUI('import', 'active', { statusText: 'Starting website update...', activeButtonText: 'Initiating...' });
-                     addActivity("Started Website Update.");
-                     stopPollingWpStatus(); // Ensure no old polling is running
-                     google.script.run
-                         .withSuccessHandler(handleWpImportInitiation)
-                         .withFailureHandler(handleWpImportInitiation) // Check result.success
-                         .initiateWordPressImport(SESSIONS_IMPORT_ID);
-                 });
+                btn?.addEventListener('click', () => {
+                    if (!SESSIONS_IMPORT_ID) {
+                        alert("Error: Website Update Import ID is not configured.");
+                        return;
+                    }
+                    updateStepUI('import', 'active', { statusText: 'Starting website update...', activeButtonText: 'Initiating...' });
+                    // REMOVED: addActivity("Started Website Update."); // Removed as redundant with "triggered" message
+                    stopPollingWpStatus(); // Ensure no old polling is running
+                    google.script.run
+                        .withSuccessHandler(handleWpImportInitiation)
+                        .withFailureHandler(handleWpImportInitiation) // Check result.success
+                        .initiateWordPressImport(SESSIONS_IMPORT_ID);
+                });
             });
 
             // Step 2: Cancel Import
             buttonCancelImport?.addEventListener('click', () => {
-                 if (!SESSIONS_IMPORT_ID) return;
-                 if (!confirm("Are you sure you want to cancel the current website update?")) return;
+                if (!SESSIONS_IMPORT_ID) return;
+                if (!confirm("Are you sure you want to cancel the current website update?")) return;
 
-                 // Visually disable cancel button immediately
-                 buttonCancelImport.disabled = true;
-                 buttonCancelImport.querySelector('.button-text').textContent = 'Cancelling...';
-                 addActivity("Sending cancel request for website update...");
+                buttonCancelImport.disabled = true;
+                buttonCancelImport.querySelector('.button-text').textContent = 'Cancelling...';
+                addActivity("Sending cancel request for website update...");
 
-                 google.script.run
-                     .withSuccessHandler(handleCancelResult)
-                     .withFailureHandler(handleCancelResult) // Check result.success
-                     .cancelWordPressImport(SESSIONS_IMPORT_ID);
+                google.script.run
+                    .withSuccessHandler(handleCancelResult)
+                    .withFailureHandler(handleCancelResult) // Check result.success
+                    .cancelWordPressImport(SESSIONS_IMPORT_ID);
             });
-
 
             // Options Menu: Clear Cache
             clearCacheMenuButton?.addEventListener('click', () => {
-                 if(clearCacheMenuButton.disabled) return; // Prevent double click
-                 clearCacheMenuButton.disabled = true; // Disable button in menu
-                 addActivity("Started Website Cache Clear.");
-                 optionsMenu.classList.add('hidden'); // Close menu
+                if(clearCacheMenuButton.disabled) return;
+                clearCacheMenuButton.disabled = true;
+                addActivity("Started Website Cache Clear.");
+                optionsMenu.classList.add('hidden');
 
-                 google.script.run
+                google.script.run
                     .withSuccessHandler(handleCacheClearResult)
                     .withFailureHandler(handleCacheClearResult) // Check result.success
                     .clearBreezeCache();
             });
-
 
             // Theme Switch
             themeCheckbox.addEventListener('change', function() {
@@ -1136,7 +1134,30 @@
                 if (!optionsMenu.classList.contains('hidden')) feather.replace();
             });
 
-             // --- Set Initial Theme ---
+            // Options Menu: Reset Stuck Import Status
+            resetImportStatusButton?.addEventListener('click', () => {
+                if (!SESSIONS_IMPORT_ID) {
+                    alert("Error: Sessions Import ID is not configured. Cannot reset status.");
+                    return;
+                }
+                const warningMsg = `WARNING:\n\n` +
+                                `This will manually clear the 'pending' status for the Sessions website update (Import ID: ${SESSIONS_IMPORT_ID}).\n\n` +
+                                `Only use this if the update process is DEFINITELY finished or cancelled, but the dashboard is still stuck showing 'Processing...'.\n\n` +
+                                `Clearing the status while an import is actively running could cause problems.\n\n` +
+                                `Are you sure you want to reset the status?`;
+
+                if (confirm(warningMsg)) {
+                    addActivity(`Attempting manual reset for Sessions import status (ID: ${SESSIONS_IMPORT_ID})...`);
+                    optionsMenu.classList.add('hidden'); // Close menu
+
+                    google.script.run
+                        .withSuccessHandler(handleClearImportStatusResult)
+                        .withFailureHandler(handleClearImportStatusResult) // Use same handler, check result.success
+                        .clearSpecificImportCache(SESSIONS_IMPORT_ID); // Pass the specific ID
+                }
+            });
+
+            // --- Set Initial Theme ---
             const savedTheme = localStorage.getItem('theme');
             if (savedTheme) {
                 htmlElement.setAttribute('data-theme', savedTheme);
@@ -1145,47 +1166,19 @@
                 themeCheckbox.checked = false; // Default dark
             }
 
-             // --- Fetch Initial Data ---
-             addLog("<li><i data-feather='loader' class='icon status-icon-checking'></i><span class='log-message'>Loading dashboard status...</span></li>");
-             feather.replace();
+            // --- Fetch Initial Data ---
+            addLog("<li><i data-feather='loader' class='icon status-icon-checking'></i><span class='log-message'>Loading dashboard status...</span></li>");
+            feather.replace();
 
-             google.script.run
-                 .withSuccessHandler(updateDashboardInitial)
-                 .withFailureHandler((err) => {
-                      console.error("Failed to load initial data:", err);
-                      addLog(`<li><i data-feather='alert-triangle' class='icon status-icon-error'></i><span class='log-message'>Error loading initial dashboard status: ${err.message || err}</span></li>`);
-                      updateStepUI('sync', 'error', { statusText: 'Load Error' });
-                      updateStepUI('import', 'error', { statusText: 'Load Error' });
-                      // updateStepUI('cache', 'error', { statusText: 'Load Error' });
-                 })
-                 .getDashboardData(); // Fetches sheet sync AND wp status
-
-        // Options Menu: Reset Stuck Import Status
-resetImportStatusButton?.addEventListener('click', () => {
-    if (!SESSIONS_IMPORT_ID) {
-        alert("Error: Sessions Import ID is not configured. Cannot reset status.");
-        return;
-    }
-
-    // Confirmation Dialog - VERY IMPORTANT
-    const warningMsg = `WARNING:\n\n` +
-                     `This will manually clear the 'pending' status for the Sessions website update (Import ID: ${SESSIONS_IMPORT_ID}).\n\n` +
-                     `Only use this if the update process is DEFINITELY finished or cancelled, but the dashboard is still stuck showing 'Processing...'.\n\n` +
-                     `Clearing the status while an import is actively running could cause problems.\n\n` +
-                     `Are you sure you want to reset the status?`;
-
-    if (confirm(warningMsg)) {
-        addActivity(`Attempting manual reset for Sessions import status (ID: ${SESSIONS_IMPORT_ID})...`);
-        optionsMenu.classList.add('hidden'); // Close menu
-
-        google.script.run
-            .withSuccessHandler(handleClearImportStatusResult) // Use a generic handler
-            .withFailureHandler(handleClearImportStatusResult) // Use same handler, check result.success
-            .clearSpecificImportCache(SESSIONS_IMPORT_ID); // Pass the specific ID
-    }
-});
-
-                    
+            google.script.run
+                .withSuccessHandler(updateDashboardInitial)
+                .withFailureHandler((err) => {
+                    console.error("Failed to load initial data:", err);
+                    addLog(`<li><i data-feather='alert-triangle' class='icon status-icon-error'></i><span class='log-message'>Error loading initial dashboard status: ${err.message || err}</span></li>`);
+                    updateStepUI('sync', 'error', { statusText: 'Load Error' });
+                    updateStepUI('import', 'error', { statusText: 'Load Error' });
+                })
+                .getDashboardData();
 
         }); // End window load listener
 

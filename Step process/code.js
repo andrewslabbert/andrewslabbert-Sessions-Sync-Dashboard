@@ -44,8 +44,6 @@ const BASE_RETRY_DELAY_MS = 500;
 const INTER_PAGE_DELAY_MS = 200;
 const CACHE_EXPIRATION_SECONDS = 21600; // 6 hours for WP Import status cache
 
-// --- Cache Service Reference --- // <-- ADDED
-var cache = CacheService.getScriptCache();
 
 /********************************************************
  * Workflow Configuration Object (Sessions Only - Updated)
@@ -77,38 +75,6 @@ const CONFIG = {
     wpImportId: '31' // !! ACTION: Replace with the WP All Import ID for Sessions (Used by UI) !!
   }
 };
-
-/********************************************************
- * Secret Management (Run Once - Updated)
- * Stores sensitive information in Script Properties.
- ********************************************************/
-function storeSecrets() {
-  try {
-    // !! IMPORTANT !! Replace with your actual API Token and WP Key before running MANUALLY from the editor!
-    const tokenToStore = 'patuJ7uJDTaYRV1d9.91bb89245dfe18f65a7fb47ec75ddcc7c6a0a0fe1aeded3af7fda6b5578f556a'; // <--- PASTE TOKEN HERE
-    const wpKeyToStore = 'DF4J01r';   // <--- PASTE WP KEY HERE (e.g., DF4J01r)
-
-    if (tokenToStore === 'PASTE_YOUR_AIRTABLE_API_TOKEN_HERE' || !tokenToStore) {
-        Logger.log("WARN: Please paste your actual Airtable API token into the script before running storeSecrets().");
-        return;
-    }
-    if (wpKeyToStore === 'PASTE_YOUR_WP_IMPORT_KEY_HERE' || !wpKeyToStore) { // <-- ADDED CHECK
-        Logger.log("WARN: Please paste your actual WP Import Key into the script before running storeSecrets().");
-        return;
-    }
-
-    const scriptProperties = PropertiesService.getScriptProperties();
-    scriptProperties.setProperty('AIRTABLE_API_TOKEN', tokenToStore);
-    scriptProperties.setProperty('WP_IMPORT_KEY', wpKeyToStore); // <-- ADDED
-
-    Logger.log("Secret 'AIRTABLE_API_TOKEN' stored successfully.");
-    Logger.log("Secret 'WP_IMPORT_KEY' stored successfully."); // <-- ADDED
-
-  } catch (e) {
-    Logger.log("ERROR storing secrets: " + e);
-    throw new Error("Failed to store secrets. Check logs and script permissions.");
-  }
-}
 
 
 // =======================================================
@@ -898,127 +864,62 @@ function initiateWordPressImport(importId) {
 
 
 /********************************************************
- * getImportStatus - Reads status from CacheService for the UI
+ * getImportStatus - Reads status via the ImportHandlerLib Library.
+ *                   Calls the central handler script to get status from its cache.
  * @param {string} importId - The WP All Import numerical ID.
- * @return {object|null} Parsed status object from cache or null/error object.
+ * @return {object|null} Parsed status object from the Handler's cache
+ *                       (e.g., {status:'complete', importId:'31', ...})
+ *                       or null if not found/expired/invalid,
+ *                       or an error object {status:'error', ...} on failure.
  ********************************************************/
 function getImportStatus(importId) {
+    const logPrefix = "DASHBOARD [getImportStatus]: ";
+
     if (!importId) {
-        Logger.log("WARN [getImportStatus]: Called without importId.");
-        return { status: 'error', message: 'Import ID missing.', importId: null };
-     }
-     importId = String(importId);
-     var cacheKey = 'import_status_' + importId;
-     Logger.log("DEBUG [getImportStatus]: Checking cache key: " + cacheKey);
+        Logger.log(logPrefix + "Called without importId.");
+        // Return an object indicating the error, consistent with other error returns
+        return { status: 'error_local', message: 'Import ID missing in dashboard call.', importId: null };
+    }
+    importId = String(importId); // Ensure it's a string
+
+    Logger.log(logPrefix + "Requesting status for Import ID '" + importId + "' from ImportHandlerLib.");
 
     try {
-        var cachedData = cache.get(cacheKey);
-        if (cachedData) {
-             Logger.log("DEBUG [getImportStatus]: Cache hit for " + cacheKey);
-             var parsedData = JSON.parse(cachedData);
-             if (parsedData && parsedData.status) {
-                parsedData.cacheCheckTime = new Date().toISOString(); // Add check time
-                return parsedData; // Return valid status object
-             } else {
-                 Logger.log("WARN [getImportStatus]: Cache data invalid (key: " + cacheKey + "): " + cachedData);
-                 return null; // Treat as cache miss
-             }
+        // --- Call the Library Function ---
+        // This executes the getImportStatusFromCache function within the Handler script's context
+        var statusDataFromLib = ImportHandlerLib.getImportStatusFromCache(importId);
+        // --- End Library Call ---
+
+        if (statusDataFromLib) {
+            // The library function returns the parsed object on success
+            Logger.log(logPrefix + "Received status object from Library for ID '" + importId + "'. Status: " + statusDataFromLib.status);
+            // Add timestamp for freshness check if needed by UI later
+            statusDataFromLib.libraryCheckTime = new Date().toISOString();
+            return statusDataFromLib; // Return the valid status object received from the library
+
         } else {
-             Logger.log("DEBUG [getImportStatus]: Cache miss for " + cacheKey);
-             return null; // Not found in cache
+            // Library returned null (means not found, expired, or parse error within the library)
+            Logger.log(logPrefix + "Library returned null for Import ID '" + importId + "' (Not found, expired, or invalid data in Handler cache).");
+            // Return null to indicate status is unavailable via the library
+            return null;
         }
+
     } catch (e) {
-        Logger.log("ERROR [getImportStatus]: Cache read/parse error (ID " + importId + "): " + e);
-        return { status: 'error', message: "Cache read/parse error: " + e.message, importId: importId };
-    }
-}
-
-
-/********************************************************
- * clearBreezeCache - Calls the WP plugin to clear Breeze cache
- * @return {object} Result object { success: boolean, status: string, message: string, log: string }
- ********************************************************/
-function clearBreezeCache() {
-    var startTime = new Date();
-    var logCollector = [];
-    var success = false;
-    var message = "Cache clear failed.";
-    var status = "error";
-
-    function logCache(msg) {
-        var timeStamped = "[" + startTime.toLocaleTimeString() + "] ";
-        logCollector.push(timeStamped + msg);
-        Logger.log("CACHE_CLEAR: " + msg);
-    }
-
-    logCache("INFO: Received request to clear Breeze cache.");
-
-    // --- Construct URL ---
-    var clearCacheUrl = WP_IMPORT_BASE_URL +
-                        '?import_key=' + encodeURIComponent(WP_IMPORT_KEY) +
-                        '&action=clear_breeze_cache' + // Matches PHP plugin
-                        '&rand=' + Math.random();
-
-    logCache("INFO: Calling WP cache clear endpoint...");
-    Logger.log("DEBUG: Cache Clear URL: " + clearCacheUrl);
-
-    // --- Set Fetch Options ---
-    var options = {
-        method: 'get', muteHttpExceptions: true,
-        headers: { 'User-Agent': 'GoogleAppsScript-SessionsSyncDashboard/1.2-CacheClear' },
-        deadline: WP_ACTION_TIMEOUT
-    };
-
-    // --- Make Request ---
-    try {
-        var response = UrlFetchApp.fetch(clearCacheUrl, options);
-        var responseCode = response.getResponseCode();
-        var responseText = response.getContentText() || '(No response body)';
-        var responseJson = null;
-        logCache("INFO: WP Cache Clear Response Code: " + responseCode);
-        Logger.log("DEBUG: WP Cache Clear Response Body: " + responseText);
-
-        try { responseJson = JSON.parse(responseText); } catch (parseErr) {
-             logCache("WARN: Could not parse JSON response from cache clear: " + parseErr.message);
-        }
-
-        // Check response based on PHP plugin's wpaip_send_json_success/error format
-        if (responseCode === 200 && responseJson && responseJson.success === true) {
-            success = true; status = "success";
-            message = (responseJson.data && responseJson.data.message) ? responseJson.data.message : "Cache cleared successfully.";
-            logCache("✅ SUCCESS: WP confirmed cache clear.");
-        } else if (responseCode === 200 && responseJson && responseJson.success === false) {
-            success = false; status = "wp_error";
-            message = (responseJson.data && responseJson.data.message) ? responseJson.data.message : "WP reported error during cache clear.";
-            logCache("❌ ERROR: WP reported failure: " + message);
-        } else if (responseCode >= 400) {
-            success = false; status = "http_error";
-            message = "Cache clear endpoint failed (HTTP Status: " + responseCode + ")";
-            logCache("❌ ERROR: " + message);
+        // --- Handle errors during the library call itself ---
+        Logger.log(logPrefix + "ERROR calling ImportHandlerLib.getImportStatusFromCache for ID '" + importId + "': " + e);
+        if (e.message.includes("ImportHandlerLib is not defined")) {
+             Logger.log(logPrefix + "This likely means the Library Identifier is incorrect or the library wasn't added properly.");
+             return { status: 'error_library_setup', message: "Library configuration error: " + e.message, importId: importId };
+        } else if (e.message.includes("You do not have permission")) {
+             Logger.log(logPrefix + "This likely means the Handler library needs re-authorization or permissions changed.");
+             return { status: 'error_library_permission', message: "Library permission error: " + e.message, importId: importId };
         } else {
-             success = false; status = "unexpected_response";
-             message = "Unexpected response from WP cache clear. Code: " + responseCode;
-             logCache("❌ ERROR: " + message);
+             // Generic error calling the library
+             return { status: 'error_library_call', message: "Error calling status library: " + e.message, importId: importId };
         }
-    } catch (fetchErr) {
-         if (fetchErr.message.includes("Timeout") || fetchErr.message.includes("timed out")) {
-            status = "timeout_error";
-            message = "Request to clear cache timed out. Status uncertain.";
-            logCache("⚠️ WARN: Cache clear request timed out.");
-         } else {
-            status = "fetch_error";
-            message = "Error contacting WP cache clear: " + fetchErr.message;
-            logCache("❌ EXCEPTION during cache clear call: " + message);
-         }
-         success = false;
     }
-
-    // --- Prepare Result ---
-    var finalElapsedTime = ((new Date().getTime() - startTime.getTime()) / 1000).toFixed(1);
-    logCache("INFO: Cache Clear Finished. Elapsed: " + finalElapsedTime + "s. Status: " + status);
-
-    return { success: success, status: status, message: message, log: logCollector.join("\n") };
 }
+
 
 /********************************************************
  * cancelWordPressImport - Attempts to signal WP to cancel an import
@@ -1129,49 +1030,6 @@ function cancelWordPressImport(importId) {
 //            (Including doPost for WP Callbacks)
 // =======================================================
 
-
-
-/********************************************************
- * getImportStatus - Reads status from CacheService for the UI
- * @param {string} importId - The WP All Import numerical ID.
- * @return {object|null} Parsed status object from cache or null if not found/invalid.
- ********************************************************/
-function getImportStatus(importId) {
-    if (!importId) {
-        Logger.log("WARN [getImportStatus]: Called without importId.");
-        return null;
-     }
-     importId = String(importId);
-     var cacheKey = 'import_status_' + importId;
-     Logger.log("DEBUG [getImportStatus]: Checking cache for key: " + cacheKey);
-
-    try {
-        var cachedData = cache.get(cacheKey);
-        if (cachedData) {
-             Logger.log("DEBUG [getImportStatus]: Cache hit for " + cacheKey + ". Data: " + cachedData.substring(0,100) + "...");
-             var parsedData = JSON.parse(cachedData);
-              // Basic validation: Check for essential 'status' field
-             if (parsedData && parsedData.status) {
-                // Add timestamp for freshness check if needed by UI later
-                parsedData.cacheCheckTime = new Date().toISOString();
-                return parsedData;
-             } else {
-                 Logger.log("WARN [getImportStatus]: Cache data for " + cacheKey + " seems invalid (missing 'status'): " + cachedData);
-                 // Optional: Clear invalid entry
-                 // cache.remove(cacheKey);
-                 return null; // Treat as cache miss
-             }
-        } else {
-             Logger.log("DEBUG [getImportStatus]: Cache miss for " + cacheKey);
-             // No need to check sheet as fallback, cache is the source of truth for status
-             return null;
-        }
-    } catch (e) {
-        Logger.log("ERROR [getImportStatus]: Error reading/parsing import status from cache for ID " + importId + ": " + e);
-        // Return an error status object recognizable by the UI
-        return { status: 'error', message: "Cache read/parse error: " + e.message, importId: importId };
-    }
-}
 
 
 /********************************************************
@@ -1586,50 +1444,43 @@ function onFailure(error) {
 
 
 /********************************************************
- * clearSpecificImportCache - Manually clears the cache for a specific import ID.
+ * clearSpecificImportCache - Requests the Import Handler library to clear
+ *                            the cache for a specific import ID.
  * Intended as a recovery tool if an import gets stuck in 'pending'.
  * @param {string} importId - The WP All Import numerical ID to clear.
- * @return {object} Result object { success: boolean, message: string }
+ * @return {object} Result object { success: boolean, message: string } from the library call.
  ********************************************************/
 function clearSpecificImportCache(importId) {
-  const logPrefix = "CACHE_MANUAL_CLEAR: ";
+  const logPrefix = "DASHBOARD [clearSpecificImportCache]: ";
+
   if (!importId) {
     Logger.log(logPrefix + "ERROR - No Import ID provided.");
-    return { success: false, message: "Import ID missing. Cannot clear cache." };
+    return { success: false, message: "Import ID missing. Cannot request cache clear." };
   }
+  importId = String(importId); // Ensure string
 
-  // Ensure importId is a string for consistency
-  importId = String(importId);
-  const cacheKey = 'import_status_' + importId;
-  const scriptCache = CacheService.getScriptCache(); // Get cache instance
-
-  Logger.log(logPrefix + "Attempting to manually clear cache for key: %s (Import ID: %s)", cacheKey, importId);
+  Logger.log(logPrefix + "Requesting Handler Library to clear cache for Import ID: '" + importId + "'");
 
   try {
-    // Check if the key exists before removing (optional, but good for logging)
-    const currentValue = scriptCache.get(cacheKey);
-    if (currentValue) {
-        Logger.log(logPrefix + "Found existing value: %s", currentValue.substring(0, 100) + "...");
-    } else {
-         Logger.log(logPrefix + "No existing value found for key %s.", cacheKey);
-         // Still return success as the goal is for the key to not exist
-         return { success: true, message: "Status for Import ID " + importId + " was already clear (not found in cache)." };
-    }
+    // --- Call the new Library Function ---
+    var clearResult = ImportHandlerLib.clearImportStatusInCache(importId);
+    // --- End Library Call ---
 
-    // Remove the cache entry
-    scriptCache.remove(cacheKey);
+    // Log the result received from the library
+    Logger.log(logPrefix + "Received response from Library clear request: Success=" + clearResult.success + ", Message=" + clearResult.message);
 
-    // Verify removal (optional but recommended)
-    const valueAfterRemove = scriptCache.get(cacheKey);
-    if (valueAfterRemove === null) {
-        Logger.log(logPrefix + "Successfully cleared cache for key: %s", cacheKey);
-        return { success: true, message: "Successfully cleared stuck status for Import ID " + importId + "." };
-    } else {
-        Logger.log(logPrefix + "WARN - Cache key %s still exists after removal attempt. Value: %s", cacheKey, valueAfterRemove);
-        return { success: false, message: "Cache removal seemed to fail for Import ID " + importId + ". Check logs." };
-    }
+    // Return the result object directly from the library
+    return clearResult;
+
   } catch (e) {
-    Logger.log(logPrefix + "ERROR clearing cache for key %s: %s", cacheKey, e);
-    return { success: false, message: "Error clearing cache: " + e.message };
+    // Handle errors during the library call itself
+    Logger.log(logPrefix + "ERROR calling ImportHandlerLib.clearImportStatusInCache for ID '" + importId + "': " + e);
+    let message = "Error requesting cache clear via library: " + e.message;
+    // Add specific checks if needed (like in getImportStatus error handling)
+    if (e.message.includes("ImportHandlerLib is not defined")) { message = "Library configuration error: " + e.message; }
+    else if (e.message.includes("You do not have permission")) { message = "Library permission error: " + e.message; }
+
+    // Return an error object
+    return { success: false, message: message };
   }
 }
