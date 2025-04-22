@@ -419,8 +419,11 @@ function wpaip_send_data_to_script($import_id, $import_data) {
     // **IMPORTANT**: Replace the URL below with the deployed URL
     //               of your DEDICATED "WP Callback Handler" Apps Script.
     // ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
-    $script_url = 'https://script.google.com/macros/s/AKfycbwHCsmZxZJOI3v-QeLMyNNDinv2UdEx9MvbCdKxOmBOc90Z-qO1ArRCHC-BLESgjmXX/exec';
-    // =======================================================
+    $script_url = add_query_arg(
+        'secret',           //  ➜  query‑param name expected by GAS
+        WPAIP_SECURITY_KEY, //  ➜  must match the WEBHOOK_SECRET in Script Properties
+        'https://script.google.com/macros/s/AKfycbyjMiz0VBM6BSRe-fcjxt0S-f8m-QAr5TLKJb7Muoph7kwUapTGKi_LP6u8tbz1hgdG/exec'
+    );
 
 
     if (empty($script_url) || $script_url === 'PASTE_YOUR_NEW_CALLBACK_HANDLER_APPS_SCRIPT_URL_HERE/exec') {
@@ -443,21 +446,20 @@ function wpaip_send_data_to_script($import_id, $import_data) {
         return;
     }
 
-    // Configure wp_remote_post arguments
+    //* ---------- 2) wp_remote_post  ---------- */
     $args = array(
-        'method'      => 'POST',
-        'timeout'     => 60,       // Generous timeout for GAS processing
-        'redirection' => 5,
-        'httpversion' => '1.1',
-        'blocking'    => true,     // Wait for the response from GAS
-        'headers'     => array(
-            'Content-Type' => 'application/json; charset=utf-8',
-            // Identify the source of the request
-            'User-Agent'   => 'WordPress-WPAIP-Logger/' . get_bloginfo('version') . '; ' . get_bloginfo('url')
-            ),
-        'body'        => $payload,
-        'cookies'     => array(),
-        'sslverify'   => true    // Keep true unless specific SSL issues are diagnosed
+    'method'      => 'POST',
+    'timeout'     => 60,
+    'redirection' => 5,
+    'httpversion' => '1.1',
+    'blocking'    => true,
+    'headers'     => array(
+        'Content-Type' => 'application/json; charset=utf-8',
+        'User-Agent'   => 'WordPress-WPAIP-Logger/' . get_bloginfo('version') . '; ' . get_bloginfo('url')
+    ),
+    'body'        => $payload,
+    'cookies'     => array(),
+    'sslverify'   => true
     );
 
     // Log before sending
