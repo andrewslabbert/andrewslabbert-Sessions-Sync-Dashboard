@@ -15,6 +15,16 @@
             --color-warning-dark: #f59e0b; --color-error-dark: #f43f5e; --border-color-dark: #3e4450;
             --border-highlight-dark: var(--accent-primary-dark); --placeholder-color-dark: #5a6372;
             --shadow-color-dark: rgba(0, 245, 212, 0.1); --button-primary-text-dark: var(--bg-primary-dark);
+            --step-border-dark: var(--border-color-dark);
+            --step-bg-dark: var(--bg-secondary-dark);
+            --step-disabled-opacity-dark: 0.5;
+            --step-connector-color-dark: var(--border-color-dark);
+            --step-indicator-bg-dark: var(--bg-tertiary-dark);
+            --step-indicator-text-dark: var(--text-secondary-dark);
+            --step-indicator-complete-bg-dark: var(--color-success-dark);
+            --step-indicator-error-bg-dark: var(--color-error-dark);
+            --step-indicator-active-bg-dark: var(--color-warning-dark);
+            --step-indicator-complete-text-dark: var(--bg-primary-dark);
         }
         /* --- Configuration: Light Mode --- */
         :root[data-theme="light"] {
@@ -24,6 +34,16 @@
             --color-warning-light: #ffc107; --color-error-light: #dc3545; --border-color-light: #dee2e6;
             --border-highlight-light: var(--accent-primary-light); --placeholder-color-light: #adb5bd;
             --shadow-color-light: rgba(0, 169, 145, 0.2); --button-primary-text-light: #ffffff;
+            --step-border-light: var(--border-color-light);
+            --step-bg-light: var(--bg-secondary-light);
+            --step-disabled-opacity-light: 0.6;
+            --step-connector-color-light: var(--border-color-light);
+            --step-indicator-bg-light: var(--bg-tertiary-light);
+            --step-indicator-text-light: var(--text-secondary-light);
+            --step-indicator-complete-bg-light: var(--color-success-light);
+            --step-indicator-error-bg-light: var(--color-error-light);
+            --step-indicator-active-bg-light: var(--color-warning-light);
+            --step-indicator-complete-text-light: #ffffff;
         }
         /* --- Theme Variable Mapping --- */
         :root {
@@ -33,6 +53,11 @@
             --color-warning: var(--color-warning-dark); --color-error: var(--color-error-dark); --border-color: var(--border-color-dark);
             --border-highlight: var(--border-highlight-dark); --placeholder-color: var(--placeholder-color-dark);
             --shadow-color: var(--shadow-color-dark); --button-primary-text: var(--button-primary-text-dark);
+            --step-border: var(--step-border-dark); --step-bg: var(--step-bg-dark); --step-disabled-opacity: var(--step-disabled-opacity-dark);
+            --step-connector-color: var(--step-connector-color-dark); --step-indicator-bg: var(--step-indicator-bg-dark);
+            --step-indicator-text: var(--step-indicator-text-dark); --step-indicator-complete-bg: var(--step-indicator-complete-bg-dark);
+            --step-indicator-error-bg: var(--step-indicator-error-bg-dark); --step-indicator-active-bg: var(--step-indicator-active-bg-dark);
+            --step-indicator-complete-text: var(--step-indicator-complete-text-dark);
             --font-family: 'Inter', -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
             --border-radius: 8px; --transition-speed: 0.3s; --fast-transition-speed: 0.15s;
         }
@@ -43,6 +68,11 @@
             --color-warning: var(--color-warning-light); --color-error: var(--color-error-light); --border-color: var(--border-color-light);
             --border-highlight: var(--border-highlight-light); --placeholder-color: var(--placeholder-color-light);
             --shadow-color: var(--shadow-color-light); --button-primary-text: var(--button-primary-text-light);
+             --step-border: var(--step-border-light); --step-bg: var(--step-bg-light); --step-disabled-opacity: var(--step-disabled-opacity-light);
+            --step-connector-color: var(--step-connector-color-light); --step-indicator-bg: var(--step-indicator-bg-light);
+            --step-indicator-text: var(--step-indicator-text-light); --step-indicator-complete-bg: var(--step-indicator-complete-bg-light);
+            --step-indicator-error-bg: var(--step-indicator-error-bg-light); --step-indicator-active-bg: var(--step-indicator-active-bg-light);
+            --step-indicator-complete-text: var(--step-indicator-complete-text-light);
         }
         /* --- Base & Reset --- */
         *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
@@ -58,19 +88,14 @@
             flex-direction: column;
             gap: 2rem;
         }
-        header { text-align: center; margin-bottom: 0.5rem; }
+        header { text-align: center; margin-bottom: 1rem; } /* Reduced bottom margin */
         header h1 { font-size: 2rem; font-weight: 600; color: var(--text-primary); margin-bottom: 0.25rem; }
         header p { color: var(--text-secondary); font-size: 1rem; }
 
         /* --- Top Right Theme Switch --- */
         .top-right-theme-switch {
-            position: absolute;
-            top: 1rem; /* Adjust as needed */
-            right: 1rem; /* Adjust as needed */
-            z-index: 15; /* Ensure it's above header if overlaps */
-            display: flex; /* Keep its internal layout */
-            align-items: center;
-            gap: 0.5rem;
+            position: absolute; top: 1rem; right: 1rem; z-index: 15;
+            display: flex; align-items: center; gap: 0.5rem;
         }
         .theme-switch { display: inline-block; height: 22px; position: relative; width: 44px; }
         .theme-switch input { display:none; }
@@ -80,91 +105,120 @@
         input:checked + .slider:before { transform: translateX(22px); background-color: var(--bg-secondary); }
         .top-right-theme-switch .icon { stroke: var(--text-tertiary); width: 18px; height: 18px; }
 
-
-        /* --- Sync Control --- */
-        .sync-control {
-            padding: 0.5rem 0;
+        /* --- Stepper UI --- */
+        .stepper-container {
             display: flex;
-            flex-wrap: wrap;
-            justify-content: space-between;
-            align-items: center;
-            gap: 1rem;
+            flex-wrap: wrap; /* Allow wrapping on smaller screens */
+            gap: 1rem; /* Gap between steps and connectors */
+            width: 100%;
+            align-items: stretch; /* Make steps equal height */
             border-bottom: 1px solid var(--border-color);
-            padding-bottom: 1.5rem;
+            padding-bottom: 2rem;
         }
-        .button-group { display: flex; gap: 0.75rem; margin-left: auto; align-items: center; }
-        .sync-status { display: flex; align-items: center; gap: 0.5rem; color: var(--text-secondary); font-size: 0.9rem; }
-        .sync-status .icon { width: 16px; height: 16px; }
-        .status-indicator { width: 10px; height: 10px; border-radius: 50%; transition: background-color var(--transition-speed) ease; }
-        .status-idle { background-color: var(--text-tertiary); }
-        .status-syncing { background-color: var(--color-warning); animation: pulse 1.5s infinite ease-in-out; }
-        .status-success { background-color: var(--color-success); }
-        .status-error { background-color: var(--color-error); }
-        @keyframes pulse { 0%, 100% { opacity: 1; } 50% { opacity: 0.5; } }
-
-        /* --- Buttons --- */
-        .sync-button, .secondary-button { border: none; padding: 0.7rem 1.5rem; font-size: 1rem; font-weight: 600; border-radius: var(--border-radius); cursor: pointer; display: inline-flex; align-items: center; gap: 0.6rem; transition: all var(--transition-speed) ease; white-space: nowrap; }
-        .sync-button { background: linear-gradient(45deg, var(--accent-secondary), var(--accent-primary)); color: var(--button-primary-text); box-shadow: 0 4px 15px var(--shadow-color); }
-        .sync-button:hover:not(:disabled) { transform: translateY(-2px); box-shadow: 0 6px 20px var(--shadow-color); filter: brightness(1.1); }
-        .sync-button:active:not(:disabled) { transform: translateY(0); box-shadow: 0 2px 10px var(--shadow-color); }
-        .sync-button:disabled { opacity: 0.6; cursor: not-allowed; }
-        .sync-button .icon { width: 18px; height: 18px; }
-        .last-sync-info {
-            color: var(--text-tertiary);
-            font-size: 0.9rem;
-            flex-shrink: 0; /* Prevent shrinking */
-            text-align: right;
-            margin-right: 1rem; /* Space before button group */
+        .step {
+            background-color: var(--step-bg);
+            border: 1px solid var(--step-border);
+            border-radius: var(--border-radius);
+            padding: 1.5rem;
+            display: flex;
+            flex-direction: column;
+            flex: 1 1 300px; /* Allow shrinking/growing, base width 300px */
+            min-width: 280px; /* Prevent steps getting too narrow */
+            transition: opacity var(--transition-speed) ease, border-color var(--transition-speed) ease, box-shadow var(--transition-speed) ease;
         }
-        .last-sync-info .icon { width: 14px; height: 14px; vertical-align: middle; margin-right: 0.3rem; stroke: var(--text-tertiary); }
-
-        /* --- Icon Button Styling (for Copy and More Options) --- */
-        .icon-button {
-            background: none;
-            border: none;
-            padding: 0.3rem; /* Small padding for click area */
-            margin: 0;
-            cursor: pointer;
-            color: var(--text-tertiary);
-            display: inline-flex;
+        .step-header {
+            display: flex;
             align-items: center;
-            justify-content: center;
-            border-radius: 50%; /* Make it circular */
-            transform: scale(1); /* Define base scale */
-            transition: background-color var(--fast-transition-speed) ease,
-                        color var(--fast-transition-speed) ease,
-                        transform var(--fast-transition-speed) ease; /* Add transform */
+            gap: 0.75rem;
+            margin-bottom: 1rem;
+        }
+        .step-indicator {
+            width: 32px; height: 32px; border-radius: 50%;
+            background-color: var(--step-indicator-bg);
+            color: var(--step-indicator-text);
+            display: inline-flex; align-items: center; justify-content: center;
+            font-weight: 600; font-size: 0.9rem;
+            flex-shrink: 0;
+            transition: background-color var(--transition-speed) ease, color var(--transition-speed) ease;
+        }
+        .step-indicator .icon { width: 18px; height: 18px; } /* For icons inside indicator */
+        .step-title { font-size: 1.1rem; font-weight: 600; color: var(--text-primary); }
+        .step-content { display: flex; flex-direction: column; gap: 0.75rem; flex-grow: 1; }
+        .step-status { font-size: 0.9rem; color: var(--text-secondary); min-height: 1.6em; /* Prevent layout shifts */}
+        .step-details { font-size: 0.85rem; color: var(--text-tertiary); margin-top: auto; padding-top: 0.5rem; } /* Push to bottom */
+        .step-button-group { margin-top: 1rem; display: flex; flex-wrap: wrap; gap: 0.75rem; }
+
+        /* Step Buttons */
+        .step-button {
+            border: none; padding: 0.6rem 1.2rem; font-size: 0.9rem; font-weight: 600;
+            border-radius: var(--border-radius); cursor: pointer; display: inline-flex;
+            align-items: center; justify-content: center; gap: 0.5rem;
+            transition: all var(--fast-transition-speed) ease; white-space: nowrap;
+        }
+        .step-button .icon { width: 16px; height: 16px; }
+        .step-button.primary { background: linear-gradient(45deg, var(--accent-secondary), var(--accent-primary)); color: var(--button-primary-text); box-shadow: 0 2px 8px var(--shadow-color); }
+        .step-button.primary:hover:not(:disabled) { transform: translateY(-1px); box-shadow: 0 4px 12px var(--shadow-color); filter: brightness(1.1); }
+        .step-button.primary:disabled { opacity: 0.5; cursor: not-allowed; background: var(--bg-tertiary); color: var(--text-tertiary); box-shadow: none; }
+        .step-button.secondary { background-color: var(--bg-tertiary); color: var(--text-primary); border: 1px solid var(--border-color); }
+        .step-button.secondary:hover:not(:disabled) { background-color: var(--border-color); }
+        .step-button.secondary:disabled { opacity: 0.5; cursor: not-allowed; }
+        .step-button.danger { background-color: transparent; color: var(--color-error); border: 1px solid var(--color-error); }
+        .step-button.danger:hover:not(:disabled) { background-color: rgba(var(--color-error-dark-rgb, 244, 63, 94), 0.1); } /* Adjust RGB */
+        :root[data-theme="light"] .step-button.danger:hover:not(:disabled) { background-color: rgba(var(--color-error-light-rgb, 220, 53, 69), 0.1); } /* Adjust RGB */
+
+        /* Stepper State Styling */
+        .step.step-not-recommended { opacity: var(--step-disabled-opacity); }
+        .step.step-not-recommended .step-button.primary { /* Make greyed-out primary look secondary */
+             background: var(--bg-tertiary); color: var(--text-tertiary); box-shadow: none;
+             border: 1px solid var(--border-color);
+        }
+         /* Highlight for recommended step */
+        .step.step-recommended { border-color: var(--border-highlight); box-shadow: 0 0 10px var(--shadow-color); }
+
+        /* Active state */
+        .step.step-active .step-indicator { background-color: var(--step-indicator-active-bg); animation: pulse-indicator 1.5s infinite ease-in-out; }
+        @keyframes pulse-indicator { 0%, 100% { opacity: 1; } 50% { opacity: 0.6; } }
+        .step.step-active { border-color: var(--color-warning); }
+
+        /* Complete state */
+        .step.step-complete .step-indicator { background-color: var(--step-indicator-complete-bg); color: var(--step-indicator-complete-text); }
+        .step.step-complete { border-color: var(--color-success); }
+
+         /* Error state */
+        .step.step-error .step-indicator { background-color: var(--step-indicator-error-bg); color: var(--step-indicator-complete-text); }
+        .step.step-error { border-color: var(--color-error); }
+        .step.step-error .step-status { color: var(--color-error); font-weight: 500; }
+
+         /* Cancelled state */
+        .step.step-cancelled .step-indicator { background-color: var(--step-indicator-error-bg); /* Similar to error */ color: var(--step-indicator-complete-text); }
+        .step.step-cancelled { border-color: var(--color-error); /* Similar to error */ }
+        .step.step-cancelled .step-status { color: var(--text-secondary); font-weight: 500; }
+
+        /* Connector (Optional visual element) */
+        .step-connector { display: none; /* Hide connectors for now, can be added back */ }
+
+        /* --- Helper Classes --- */
+        .hidden { display: none !important; }
+
+
+        /* --- Icon Button Styling --- */
+        .icon-button {
+            background: none; border: none; padding: 0.3rem; margin: 0; cursor: pointer;
+            color: var(--text-tertiary); display: inline-flex; align-items: center;
+            justify-content: center; border-radius: 50%; transform: scale(1);
+            transition: all var(--fast-transition-speed) ease;
         }
         .icon-button:hover { background-color: var(--bg-tertiary); color: var(--text-primary); }
-        .icon-button .icon { stroke: currentColor; /* Icon color inherits button color */ width: 18px; height: 18px; transition: stroke var(--fast-transition-speed) ease; }
+        .icon-button .icon { stroke: currentColor; width: 18px; height: 18px; transition: stroke var(--fast-transition-speed) ease; }
 
         /* --- Copy Button Feedback --- */
-        .copy-log-button.copied { transform: scale(1.1); /* Button scales up briefly */ }
-        .copy-log-button.copied .icon { stroke: var(--color-success); /* Change icon color to success */ }
+        .copy-log-button.copied { transform: scale(1.1); }
+        .copy-log-button.copied .icon { stroke: var(--color-success); }
         :root[data-theme="light"] .copy-log-button.copied .icon { stroke: var(--color-success-light); }
 
-        /* --- Metrics Section --- */
-        .metrics {
-            display: grid;
-            /* Adjust grid for 2 cards: Sessions + Duration */
-            grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); /* Allow wider cards */
-            gap: 1.5rem;
-        }
-        .metric-card { background-color: var(--bg-secondary); padding: 1.5rem; border-radius: var(--border-radius); border: 1px solid var(--border-color); display: flex; flex-direction: column; gap: 0.5rem; transition: background-color var(--transition-speed) ease, border-color var(--fast-transition-speed) ease; overflow: hidden; }
-        .metric-card:hover { background-color: var(--bg-tertiary); }
-        .metric-updated-highlight { border-left: 4px solid var(--border-highlight) !important; }
-        .metric-error-highlight { border-left: 4px solid var(--color-error) !important; }
-        .metric-header { display: flex; justify-content: space-between; align-items: center; color: var(--text-secondary); font-size: 0.85rem; text-transform: uppercase; letter-spacing: 0.5px; margin-bottom: 0.5rem; }
-        .metric-header .icon { width: 18px; height: 18px; stroke: var(--text-tertiary); }
-        .metric-value { font-size: 2rem; font-weight: 600; color: var(--text-primary); line-height: 1.2; transition: transform var(--fast-transition-speed) ease-out, color var(--fast-transition-speed) ease-out; }
-        .metric-value.placeholder { color: var(--placeholder-color); font-size: 1.75rem; }
-        .metric-value-pop { transform: scale(1.1); color: var(--accent-primary); animation: popBack var(--transition-speed) ease-out forwards var(--fast-transition-speed); }
-        @keyframes popBack { to { transform: scale(1.0); color: var(--text-primary); } }
-        .metric-subtext { font-size: 0.85rem; color: var(--text-tertiary); margin-top: auto; } /* Push to bottom */
-
-        /* --- Lower Section --- */
+        /* --- Lower Section (Logs) --- */
         .lower-section { display: grid; grid-template-columns: 1fr 1fr; gap: 1.5rem; }
-        .log-column { background-color: var(--bg-secondary); border-radius: var(--border-radius); padding: 1.5rem; display: flex; flex-direction: column; height: 400px; border: 1px solid var(--border-color); }
+        .log-column { background-color: var(--bg-secondary); border-radius: var(--border-radius); padding: 1.5rem; display: flex; flex-direction: column; min-height: 350px; /* Min height */ height: auto; border: 1px solid var(--border-color); }
         .log-column h2 {
             display: flex; justify-content: space-between; align-items: center;
             font-size: 1.2rem; font-weight: 600; margin-bottom: 1rem; color: var(--text-primary);
@@ -172,8 +226,8 @@
         }
         .log-column h2 span { display: flex; align-items: center; gap: 0.5rem; } /* Wraps text + icon */
         .log-column h2 .icon { width: 18px; height: 18px; stroke: var(--text-secondary); }
-        .copy-log-button { margin-left: auto; /* Explicitly push right */ }
-        .item-list { list-style: none; flex-grow: 1; overflow-y: auto; padding-right: 0.5rem; }
+        .copy-log-button { margin-left: auto; }
+        .item-list { list-style: none; flex-grow: 1; overflow-y: auto; padding-right: 0.5rem; max-height: 400px; /* Max height scroll */}
         .item-list::-webkit-scrollbar { width: 6px; }
         .item-list::-webkit-scrollbar-track { background: var(--bg-tertiary); border-radius: 3px; }
         .item-list::-webkit-scrollbar-thumb { background-color: var(--text-tertiary); border-radius: 3px; }
@@ -184,23 +238,18 @@
         .item-list .log-message { flex-grow: 1; word-break: break-word; }
         .item-list .log-message.success-summary { color: var(--accent-primary); font-weight: 500;}
 
-        /* Status/Log specific styles */
-        .status-icon-checking, .status-icon-loader { color: var(--color-warning); }
-        .status-icon-new { color: var(--color-success); }
-        .status-icon-updated, .status-icon-warning { color: var(--color-warning); }
-        .status-icon-error, .status-icon-failed, .status-icon-alert-triangle, .status-icon-x-octagon, .status-icon-trash-2 { color: var(--color-error); }
-        .status-icon-complete, .status-icon-check-circle { color: var(--accent-primary); }
-        .status-icon-info, .status-icon-chevrons-right, .status-icon-coffee, .status-icon-skipped, .status-icon-skip-forward { color: var(--text-tertiary); }
-        /* Update generic icons */
-        .status-icon-play-circle, /* New for Sessions */
-        .status-icon-zap, .status-icon-copy, .status-icon-more-vertical, .status-icon-list, .status-icon-align-left,
-        .status-icon-link, .status-icon-settings /* For Options Menu */
-         { color: var(--text-tertiary); }
+        /* Status/Log specific icon colors */
+        .status-icon-checking, .status-icon-loader, .status-icon-clock, .status-icon-zap { color: var(--color-warning); }
+        .status-icon-new, .status-icon-play-circle { color: var(--color-success); }
+        .status-icon-updated, .status-icon-warning, .status-icon-alert-circle, .status-icon-refresh-cw { color: var(--color-warning); }
+        .status-icon-error, .status-icon-failed, .status-icon-alert-triangle, .status-icon-x-octagon, .status-icon-trash-2, .status-icon-x-circle, .status-icon-zap-off { color: var(--color-error); }
+        .status-icon-complete, .status-icon-check-circle, .status-icon-check { color: var(--accent-primary); }
+        .status-icon-info, .status-icon-chevrons-right, .status-icon-coffee, .status-icon-skipped, .status-icon-skip-forward, .status-icon-wind, .status-icon-upload-cloud { color: var(--text-tertiary); }
+        .status-icon-settings, .status-icon-more-vertical, .status-icon-copy, .status-icon-list, .status-icon-align-left { color: var(--text-tertiary); }
 
 
         /* --- 3-Dot Options Menu Styling --- */
-        .options-menu-container { position: relative; display: inline-block; }
-        .options-menu-button { margin-left: 0.5rem; }
+        .options-menu-container { position: relative; display: inline-block; margin-left: 0.5rem; }
         .options-menu {
             position: absolute; top: calc(100% + 5px); right: 0; background-color: var(--bg-secondary);
             border-radius: var(--border-radius); border: 1px solid var(--border-color);
@@ -211,49 +260,43 @@
         }
         .options-menu.hidden { opacity: 0; visibility: hidden; transform: translateY(-5px); pointer-events: none; }
         .options-menu ul { list-style: none; padding: 0; margin: 0; }
-        .options-menu li a {
+        .options-menu li a, .options-menu li button { /* Apply to buttons too */
             display: flex; align-items: center; gap: 0.75rem; padding: 0.6rem 1rem;
             color: var(--text-primary); text-decoration: none; font-size: 0.9rem;
             white-space: nowrap; transition: background-color var(--fast-transition-speed) ease;
+            background: none; border: none; width: 100%; text-align: left; cursor: pointer;
         }
-        .options-menu li a:hover { background-color: var(--bg-tertiary); color: var(--accent-primary); }
+        .options-menu li a:hover, .options-menu li button:hover { background-color: var(--bg-tertiary); color: var(--accent-primary); }
         .options-menu .menu-icon { width: 16px; height: 16px; stroke-width: 2; color: var(--text-secondary); }
-        .options-menu li a:hover .menu-icon { color: var(--accent-primary); }
-        /* Placeholder style if menu is empty */
+        .options-menu li a:hover .menu-icon, .options-menu li button:hover .menu-icon { color: var(--accent-primary); }
         .options-menu li.placeholder { padding: 0.6rem 1rem; color: var(--text-tertiary); font-style: italic; font-size: 0.9rem;}
 
 
         /* --- Responsiveness --- */
         @media (max-width: 992px) {
             .lower-section { grid-template-columns: 1fr; }
-            .log-column { height: 350px; }
-            .metrics { grid-template-columns: repeat(auto-fit, minmax(180px, 1fr)); } /* Allow slightly smaller cards */
+            .log-column { min-height: 300px; }
+            .stepper-container { flex-direction: column; }
+            .step { flex-basis: auto; } /* Let steps stack */
+            .step-connector { display: none; } /* Hide connectors when stacked */
          }
         @media (max-width: 768px) {
             body { padding: 1rem 0.5rem; }
-            .sync-control { flex-direction: column; align-items: stretch; gap: 1rem; }
-            .sync-status { order: 1; margin-bottom: 0; }
-            .last-sync-info { order: 2; text-align: left; margin-right: 0; margin-bottom: 0.5rem; }
-            .button-group { order: 3; width: 100%; justify-content: flex-end; }
             .top-right-theme-switch { top: 0.5rem; right: 0.5rem; }
             header h1 { font-size: 1.75rem; }
-            .metric-card { padding: 1rem; }
-            .metric-value { font-size: 1.75rem; }
-            .metric-value.placeholder { font-size: 1.5rem; }
-            .metrics { grid-template-columns: 1fr 1fr; } /* Force 2 columns */
+            .stepper-container { gap: 0.75rem; }
+            .step { padding: 1rem; }
          }
         @media (max-width: 576px) {
             html { font-size: 15px; }
             header h1 { font-size: 1.5rem; }
-            .button-group { flex-direction: row; justify-content: flex-end; gap: 0.5rem; width: auto; margin-left: auto; }
-            .sync-button { flex-grow: 1; } /* Allow sync button to take available space */
-            .metrics { grid-template-columns: 1fr; } /* Stack metrics on smallest screens */
-            .metric-value { font-size: 1.5rem; }
-            .metric-value.placeholder { font-size: 1.25rem; }
             .lower-section { gap: 1rem; grid-template-columns: 1fr; }
-            .log-column { padding: 1rem; height: 300px; }
+            .log-column { padding: 1rem; min-height: 250px; }
             .log-column h2 { font-size: 1.1rem; padding-bottom: 0.5rem; margin-bottom: 0.75rem; }
             .item-list li { padding: 0.6rem 0.1rem; font-size: 0.85rem; gap: 0.5rem; }
+            .step-button { padding: 0.5rem 1rem; font-size: 0.85rem; }
+            .step-title { font-size: 1rem; }
+            .options-menu { min-width: 180px; }
         }
     </style>
 </head>
@@ -272,72 +315,89 @@
 
         <header>
             <h1>Sessions Sync Dashboard</h1>
-            <p>Sync Session Data from Airtable to Google Sheet</p>
+            <p>Sync Airtable data, update website, and manage cache.</p>
+             <!-- 3-Dot Options Menu Moved Here -->
+             <div class="options-menu-container" style="position: absolute; top: 3.5rem; right: 1rem;">
+                <button class="icon-button options-menu-button" id="optionsMenuButton" aria-label="More options">
+                    <i data-feather="settings" class="icon status-icon-settings"></i>
+                </button>
+                <div id="optionsMenu" class="options-menu hidden">
+                    <ul>
+                       <!-- !!! ACTION: Replace placeholders below !!! -->
+                       <li><a href="YOUR_AIRTABLE_BASE_LINK" target="_blank" rel="noopener noreferrer"><i data-feather="airplay" class="icon menu-icon"></i> Open Airtable Base</a></li>
+                       <li><a href="YOUR_GOOGLE_SHEET_LINK" target="_blank" rel="noopener noreferrer"><i data-feather="grid" class="icon menu-icon"></i> Open Google Sheet</a></li>
+                       <li><hr style="border: none; border-top: 1px solid var(--border-color); margin: 0.5rem 0;"></li>
+                       <li><button id="clearCacheMenuButton"><i data-feather="wind" class="icon menu-icon"></i> Clear Website Cache</button></li>
+                       <li><button id="resetImportStatusButton"><i data-feather="zap-off" class="icon menu-icon status-icon-zap-off"></i> Reset Stuck Import Status</button></li>
+                    </ul>
+                </div>
+            </div>
         </header>
 
-        <section class="sync-control">
-             <div class="sync-status" id="sync-status">
-                 <span class="status-indicator status-idle" id="status-indicator"></span>
-                 <span id="status-text">Idle</span>
-             </div>
+        <!-- Stepper UI Container -->
+        <section class="stepper-container">
 
-             <div class="last-sync-info" id="last-sync-info">
-                 <i data-feather="clock" class="icon"></i> Last Run: Never
-             </div>
-
-            <div class="button-group">
-                <button class="sync-button" id="syncButton">
-                    <i data-feather="refresh-cw" class="icon"></i>
-                    <span id="syncButtonText">Run Full Sync</span>
-                </button>
-
-                <!-- 3-Dot Options Menu (Optional - add links later if needed) -->
-                <div class="options-menu-container">
-                    <button class="icon-button options-menu-button" id="optionsMenuButton" aria-label="More options">
-                        <i data-feather="more-vertical" class="icon status-icon-more-vertical"></i>
-                    </button>
-                    <div id="optionsMenu" class="options-menu hidden">
-                        <ul>
-                           <!-- Add relevant links here later if needed -->
-                           <!-- Example:
-                           <li><a href="YOUR_AIRTABLE_BASE_LINK" target="_blank" rel="noopener noreferrer"><i data-feather="airplay" class="icon menu-icon"></i> Open Airtable Base</a></li>
-                           <li><a href="YOUR_GOOGLE_SHEET_LINK" target="_blank" rel="noopener noreferrer"><i data-feather="grid" class="icon menu-icon"></i> Open Google Sheet</a></li>
-                           -->
-                           <li class="placeholder">No options configured.</li>
-                        </ul>
-                    </div>
+            <!-- Step 1: Sync Sheet -->
+            <div class="step step-recommended" id="step-sync">
+                <div class="step-header">
+                  <span class="step-indicator" id="indicator-sync">1</span>
+                  <span class="step-title">Sync Sessions</span>
                 </div>
-                <!-- END: 3-Dot Options Menu -->
+                <div class="step-content">
+                  <p class="step-status" id="status-sync">Ready to sync from Airtable.</p>
+                  <div class="step-details" id="details-sync"></div> <!-- Sync results: X created, Y updated -->
+                  <div class="step-button-group">
+                      <button class="step-button primary" id="button-sync">
+                          <i data-feather="refresh-cw" class="icon"></i><span class="button-text">Sync Sessions Now</span>
+                      </button>
+                      <button class="step-button secondary hidden" id="button-resync">
+                          <i data-feather="refresh-cw" class="icon"></i><span class="button-text">Sync Again</span>
+                      </button>
+                       <button class="step-button secondary hidden" id="button-retry-sync">
+                           <i data-feather="refresh-cw" class="icon"></i><span class="button-text">Retry Sync</span>
+                       </button>
+                  </div>
+                </div>
             </div>
+
+            <!-- Step 2: Update Website -->
+            <div class="step step-not-recommended" id="step-import">
+                <div class="step-header">
+                  <span class="step-indicator" id="indicator-import">2</span>
+                  <span class="step-title">Update Website</span>
+                </div>
+                <div class="step-content">
+                  <p class="step-status" id="status-import">Run 'Sync Sessions' first.</p>
+                  <div class="step-details" id="details-import"></div> <!-- WP results: X created, Y updated... -->
+                   <div class="step-button-group">
+                      <button class="step-button primary" id="button-import">
+                          <i data-feather="upload-cloud" class="icon"></i><span class="button-text">Update Website Now</span>
+                      </button>
+                      <button class="step-button secondary hidden" id="button-reimport">
+                          <i data-feather="upload-cloud" class="icon"></i><span class="button-text">Update Again</span>
+                       </button>
+                       <button class="step-button secondary hidden" id="button-retry-import">
+                           <i data-feather="upload-cloud" class="icon"></i><span class="button-text">Retry Update</span>
+                       </button>
+                      <button class="step-button danger hidden" id="button-cancel-import">
+                          <i data-feather="x-circle" class="icon"></i><span class="button-text">Cancel Update</span>
+                      </button>
+                   </div>
+                </div>
+            </div>
+
+             <!-- Step 3: Clear Cache (Visually removed, functionality in menu) -->
+
         </section>
+        <!-- End Stepper UI -->
 
-        <section class="metrics" id="metrics-section">
-            <!-- Sessions Metric Card -->
-            <div class="metric-card" id="metric-card-sessions">
-                <div class="metric-header">
-                    <span>Sessions</span>
-                    <i data-feather="play-circle" class="icon status-icon-play-circle"></i> <!-- Changed Icon -->
-                </div>
-                <div class="metric-value" id="metric-sessions-changes">0</div>
-                <div class="metric-subtext">Total changes (Created + Updated)</div>
-            </div>
-            <!-- Duration Metric Card (Kept) -->
-            <div class="metric-card" id="metric-card-duration">
-                <div class="metric-header">
-                    <span>Duration</span>
-                    <i data-feather="zap" class="icon status-icon-zap"></i>
-                </div>
-                <div class="metric-value" id="metric-duration">0s</div>
-                <div class="metric-subtext">Total time for last sync</div>
-            </div>
-            <!-- Removed Partners & Venues Cards -->
-        </section>
 
+        <!-- Log Section -->
         <section class="lower-section">
             <div class="log-column recent-activity">
-                 <h2><span><i data-feather="list" class="icon status-icon-list"></i>Recent Sync Summary</span></h2>
+                 <h2><span><i data-feather="list" class="icon status-icon-list"></i>Recent Activity</span></h2>
                 <ul class="item-list" id="recent-activity-list">
-                     <li><i data-feather='info' class='icon status-icon-info'></i> Dashboard ready.</li>
+                     <li><i data-feather='info' class='icon status-icon-info'></i><span class="log-message">Dashboard ready.</span></li>
                 </ul>
             </div>
             <div class="log-column detailed-log">
@@ -348,325 +408,870 @@
                     </button>
                  </h2>
                 <ul class="item-list" id="detailed-log-list">
-                      <li><i data-feather='coffee' class='icon status-icon-coffee'></i> Waiting for sync to run...</li>
+                      <li><i data-feather='coffee' class='icon status-icon-coffee'></i><span class="log-message">Waiting for actions...</span></li>
                 </ul>
             </div>
         </section>
+        <!-- End Log Section -->
     </div>
 
+    <!-- ============================================= -->
+    <!--               JAVASCRIPT START                -->
+    <!-- ============================================= -->
     <script>
-        // --- DOM Elements ---
-        let syncButton, syncButtonText, lastSyncInfo, statusIndicator, statusText;
-        let metricsSection, metricSessionsChanges, metricDuration; // Simplified metrics
-        let recentActivityList, detailedLogList;
-        let themeCheckbox, htmlElement;
-        let copyLogButton, optionsMenuButton, optionsMenu;
+        // --- Global Config Passed from GAS ---
+        // Use <! ... > notation for GAS scriptlets to avoid potential conflicts
+        const Logger = { log: (...args) => console.log(...args) };
+        const SESSIONS_IMPORT_ID = <?= sessionsImportId ?> || null; // Get import ID passed from doGet
 
-        // --- Initial State ---
-        let isSyncing = false;
+        // --- DOM Elements ---
+        let themeCheckbox, htmlElement, copyLogButton, optionsMenuButton, optionsMenu, clearCacheMenuButton, resetImportStatusButton;
+        let stepSync, indicatorSync, statusSync, detailsSync, buttonSync, buttonResync, buttonRetrySync;
+        let stepImport, indicatorImport, statusImport, detailsImport, buttonImport, buttonReimport, buttonRetryImport, buttonCancelImport;
+        let recentActivityList, detailedLogList;
+
+        // --- State ---
+        let currentWpRunId = null; // Track the runId of the *current* initiated import *monitoring request*
+        let pollingIntervalId = null;
+        const POLLING_INTERVAL_MS = 5000; // Check WP status every 5 seconds
 
         // --- Helper Functions ---
-        function setStatus(state, message) {
-            if (!statusIndicator || !statusText) return;
-            statusIndicator.className = `status-indicator status-${state}`;
-            statusText.textContent = message;
+
+        /**
+         * Updates the UI state for a specific step in the process.
+         * @param {string} stepId - 'sync' or 'import'.
+         * @param {string} state - 'ready', 'recommended', 'not-recommended', 'active', 'complete', 'error', 'cancelled'.
+         * @param {object} [options={}] - Options: statusText, detailsHtml, activeButtonText.
+         */
+        function updateStepUI(stepId, state, options = {}) {
+            const stepElement = document.getElementById(`step-${stepId}`);
+            const indicatorElement = document.getElementById(`indicator-${stepId}`);
+            const statusElement = document.getElementById(`status-${stepId}`);
+            const detailsElement = document.getElementById(`details-${stepId}`);
+            // Primary action buttons
+            const buttonPrimary = document.getElementById(`button-${stepId}`);
+            const buttonPrimaryText = buttonPrimary?.querySelector('.button-text');
+            const buttonPrimaryIcon = buttonPrimary?.querySelector('.icon');
+            // Secondary/alternate action buttons (Get references specific to the step)
+            const buttonResync = stepId === 'sync' ? document.getElementById('button-resync') : null;
+            const buttonRetrySync = stepId === 'sync' ? document.getElementById('button-retry-sync') : null;
+            const buttonReimport = stepId === 'import' ? document.getElementById('button-reimport') : null;
+            const buttonRetryImport = stepId === 'import' ? document.getElementById('button-retry-import') : null;
+            const buttonCancelImport = stepId === 'import' ? document.getElementById('button-cancel-import') : null;
+
+            if (!stepElement || !indicatorElement || !statusElement || !detailsElement) {
+                console.error(`UI elements not found for step: ${stepId}`);
+                return;
+            }
+
+            // 1. Reset state classes & hide optional buttons
+            stepElement.classList.remove('step-ready', 'step-recommended', 'step-not-recommended', 'step-active', 'step-complete', 'step-error', 'step-cancelled');
+            indicatorElement.innerHTML = stepId === 'sync' ? '1' : (stepId === 'import' ? '2' : '?'); // Reset indicator
+            if (buttonPrimary) {
+                 buttonPrimary.disabled = false;
+                 buttonPrimary.classList.remove('hidden'); // Ensure primary button is visible initially
+            }
+             // Hide all secondary buttons by default
+            [buttonResync, buttonRetrySync, buttonReimport, buttonRetryImport, buttonCancelImport].forEach(btn => btn?.classList.add('hidden'));
+
+             // Apply default button text and icon based on stepId
+             if (buttonPrimaryText && buttonPrimaryIcon) {
+                 if (stepId === 'sync') {
+                     buttonPrimaryText.textContent = 'Sync Sessions Now';
+                     buttonPrimaryIcon.setAttribute('data-feather', 'refresh-cw');
+                 } else if (stepId === 'import') {
+                     buttonPrimaryText.textContent = 'Update Website Now';
+                     buttonPrimaryIcon.setAttribute('data-feather', 'upload-cloud');
+                 }
+             }
+
+            // 2. Apply new state class
+            stepElement.classList.add(`step-${state}`);
+
+            // 3. Update Status Text
+            if (options.statusText !== undefined) statusElement.textContent = options.statusText;
+
+            // 4. Update Details HTML
+            if (options.detailsHtml !== undefined) detailsElement.innerHTML = options.detailsHtml;
+            else detailsElement.innerHTML = ''; // Clear details if not provided
+
+            // 5. Handle State-Specific UI Changes
+            switch (state) {
+                case 'ready':
+                    // Default state - primary button enabled
+                    break;
+                case 'recommended':
+                    // Highlight applied by class
+                    break;
+                case 'not-recommended':
+                    // Grey-out applied by class
+                    break;
+                case 'active':
+                    if (buttonPrimary) buttonPrimary.disabled = true;
+                    if (buttonPrimaryText) buttonPrimaryText.textContent = options.activeButtonText || 'Processing...';
+                    indicatorElement.innerHTML = `<i data-feather="loader" class="icon"></i>`; // Spinner
+                    // Show cancel button only for import step during active state
+                    if (stepId === 'import' && buttonCancelImport) buttonCancelImport.classList.remove('hidden');
+                    break;
+                case 'complete':
+                    if (buttonPrimary) buttonPrimary.classList.add('hidden'); // Hide primary button
+                    indicatorElement.innerHTML = `<i data-feather="check" class="icon"></i>`; // Checkmark
+                    // Show appropriate "Re-run" button
+                    if (buttonResync) buttonResync.classList.remove('hidden');
+                    if (buttonReimport) buttonReimport.classList.remove('hidden');
+                    break;
+                case 'error':
+                    if (buttonPrimary) buttonPrimary.classList.add('hidden'); // Hide primary button
+                    indicatorElement.innerHTML = `<i data-feather="x" class="icon"></i>`; // Cross
+                     // Show appropriate "Retry" button
+                    if (buttonRetrySync) buttonRetrySync.classList.remove('hidden');
+                    if (buttonRetryImport) buttonRetryImport.classList.remove('hidden');
+                    break;
+                case 'cancelled': // Specific state for import
+                     if (buttonPrimary) buttonPrimary.classList.add('hidden'); // Hide primary button
+                     indicatorElement.innerHTML = `<i data-feather="x-circle" class="icon"></i>`; // Cancel icon
+                     if (buttonReimport) buttonReimport.classList.remove('hidden'); // Allow re-run
+                     break;
+                 default:
+                    // Ensure primary enabled by default if state is unknown
+                    if (buttonPrimary) buttonPrimary.disabled = false;
+            }
+
+            feather.replace(); // Update icons
         }
 
+        /** Adds a log entry (as HTML string) to the detailed log list */
         function addLog(htmlContent) {
             if (!detailedLogList || !htmlContent) return;
             const tempDiv = document.createElement('div');
-            tempDiv.innerHTML = htmlContent;
+            tempDiv.innerHTML = htmlContent; // Assumes htmlContent is like "<li>...</li>"
             if (tempDiv.firstChild) {
-                detailedLogList.prepend(tempDiv.firstChild); // Add newest first
+                 // Insert at top, limit total items for performance
+                 if (detailedLogList.children.length >= 200) {
+                    detailedLogList.removeChild(detailedLogList.lastChild);
+                 }
+                detailedLogList.prepend(tempDiv.firstChild);
             }
         }
 
-        function addActivity(htmlContent) {
-             if (!recentActivityList || !htmlContent) return;
-             const tempDiv = document.createElement('div');
-             tempDiv.innerHTML = htmlContent;
-             if (tempDiv.firstChild) {
-                 recentActivityList.prepend(tempDiv.firstChild); // Add newest first
+        /** Adds an activity summary (plain text) to the recent activity list */
+        function addActivity(text) {
+             if (!recentActivityList || !text) return;
+             let icon = 'info'; let iconClass = 'status-icon-info';
+             const lowerText = String(text).toLowerCase();
+
+             // Determine icon based on keywords (more specific)
+             if (lowerText.includes('sync complete') || lowerText.includes('update complete') || lowerText.includes('cache cleared')) { icon = 'check-circle'; iconClass = 'status-icon-complete'; }
+             else if (lowerText.includes('started sync') || lowerText.includes('started cache clear')) { icon = 'loader'; iconClass = 'status-icon-checking'; }
+             else if (lowerText.includes('monitoring started') || lowerText.includes('checking status')) { icon = 'clock'; iconClass = 'status-icon-checking'; }
+             else if (lowerText.includes('website update already running') || lowerText.includes('website update in progress') || lowerText.includes('processing')) { icon = 'zap'; iconClass = 'status-icon-checking'; }
+             else if (lowerText.includes('failed') || lowerText.includes('error')) { icon = 'alert-triangle'; iconClass = 'status-icon-error'; }
+             else if (lowerText.includes('cancelled')) { icon = 'x-circle'; iconClass = 'status-icon-error'; } // Treat cancel like error visually here
+             else if (lowerText.includes('manual status reset')) { icon = 'zap-off'; iconClass = 'status-icon-warning'; }
+
+             const li = document.createElement('li');
+             li.innerHTML = `<i data-feather='${icon}' class='icon ${iconClass}'></i><span class="log-message">${text}</span>`;
+
+             // Insert at top, limit total items
+             if (recentActivityList.children.length >= 50) {
+                 recentActivityList.removeChild(recentActivityList.lastChild);
              }
+             recentActivityList.prepend(li);
+             feather.replace({ width: 16, height: 16 }); // Redraw icons in list
         }
 
+        /** Formats an ISO timestamp for display */
         function formatDisplayTimestamp(isoTimestamp) {
             if (!isoTimestamp) return 'Never';
             try {
-                return new Date(isoTimestamp).toLocaleString([], { dateStyle: 'medium', timeStyle: 'short' });
-            } catch (e) { return 'Invalid Date'; }
+                // Attempt to use locale formatting for better readability
+                return new Date(isoTimestamp).toLocaleString([], { dateStyle: 'short', timeStyle: 'short' });
+            } catch (e) {
+                // Fallback for potential invalid dates
+                 return isoTimestamp.substring(0, 10); // Show YYYY-MM-DD at least
+            }
         }
 
-        function showLoadingState() {
-            if (!syncButton || !syncButtonText || !statusIndicator) return;
-            isSyncing = true;
-            syncButton.disabled = true;
-            syncButtonText.textContent = 'Syncing...';
-            setStatus('syncing', 'Sync in Progress...');
-            clearMetrics();
-            clearLogs();
-            addLog("<li><i data-feather='loader' class='icon status-icon-loader'></i> Triggered Full Sync via Dashboard...</li>");
-            addActivity("<li><i data-feather='loader' class='icon status-icon-loader'></i> Sync process initiated...</li>");
-            feather.replace();
-        }
-
-        function clearMetrics() {
-            const elementsToClear = [metricSessionsChanges, metricDuration];
-            elementsToClear.forEach(el => {
-                if (el) {
-                    el.textContent = '--';
-                    el.classList.add('placeholder');
-                    el.closest('.metric-card')?.classList.remove('metric-updated-highlight', 'metric-error-highlight');
-                }
-            });
-        }
-
+        /** Clears both log lists */
         function clearLogs() {
             if (recentActivityList) recentActivityList.innerHTML = '';
             if (detailedLogList) detailedLogList.innerHTML = '';
         }
 
-        function updateMetric(element, value) {
-            if (!element) return;
-            const card = element.closest('.metric-card');
-            const numericValue = Number(value) || 0;
+        /** Formats duration in milliseconds to seconds or ms */
+        function formatDuration(ms) {
+             if (ms === undefined || ms === null || ms < 0) return '--';
+             if (ms < 1000) return `${ms}ms`;
+             return `${(ms / 1000).toFixed(1)}s`;
+        }
 
-            if (element.classList.contains('placeholder') || element.textContent !== String(numericValue)) {
-                element.textContent = numericValue;
-                element.classList.remove('placeholder');
-                if (numericValue > 0) {
-                    element.classList.add('metric-value-pop');
-                    element.addEventListener('animationend', () => {
-                        element.classList.remove('metric-value-pop');
-                    }, { once: true });
-                }
-            }
-            if (card) {
-                 card.classList.remove('metric-updated-highlight', 'metric-error-highlight'); // Clear both
-                 if (numericValue > 0) card.classList.add('metric-updated-highlight');
+        /** Formats counter object into a string.
+         *  Assumes input object uses keys: created, updated, deleted, skipped
+         *  (Handles both sheet sync and import cache results structures)
+         */
+        function formatCounters(counters) {
+            if (!counters) return 'N/A'; // Return N/A if no counter object
+            let parts = [];
+            // Directly access the keys expected from either source (sheet sync OR import cache)
+            // Use nullish coalescing (??) to safely handle potentially missing keys, default to 0
+            const created = counters.created ?? counters.posts_created ?? 0;
+            const updated = counters.updated ?? counters.posts_updated ?? 0;
+            const deleted = counters.deleted ?? counters.posts_deleted ?? 0;
+            const skipped = counters.skipped ?? counters.posts_skipped ?? 0;
+
+            if (created > 0) parts.push(`${created} created`);
+            if (updated > 0) parts.push(`${updated} updated`);
+            if (deleted > 0) parts.push(`${deleted} removed`);
+            if (skipped > 0) parts.push(`${skipped} skipped`);
+
+            if (parts.length === 0 && (created === 0 && updated === 0 && deleted === 0 && skipped >= 0)) {
+                // Explicitly state "No changes" if counts are zero or only skipped > 0
+                return 'No changes.';
+            } else if (parts.length > 0) {
+                return parts.join(', ');
+            } else {
+                // Fallback if the counters object was present but empty/unrecognized
+                return 'Stats N/A';
             }
         }
 
-        function updateDurationMetric(durationMs, hasErrors = false) {
-             if (!metricDuration) return;
-             const element = metricDuration;
-             const card = element.closest('.metric-card');
-             const durationSec = durationMs > 0 ? (durationMs / 1000).toFixed(1) + 's' : '0s';
-
-             if (element.classList.contains('placeholder') || element.textContent !== durationSec) {
-                 element.textContent = durationSec;
-                 element.classList.remove('placeholder');
-             }
-             if (card) {
-                  card.classList.remove('metric-updated-highlight', 'metric-error-highlight');
-                  if (hasErrors) card.classList.add('metric-error-highlight');
-             }
-        }
-
+         /** Shows visual feedback on the copy button */
         function showCopySuccessFeedback() {
             if (!copyLogButton) return;
             copyLogButton.classList.add('copied');
             setTimeout(() => { if (copyLogButton) copyLogButton.classList.remove('copied'); }, 1500);
         }
 
+        /** Fallback copy method using execCommand */
         function tryExecCommandCopy(textToCopy) {
-            console.log("Attempting fallback copy method...");
             const textArea = document.createElement("textarea");
+            // Basic styling to prevent visual interference
             textArea.style.position = 'fixed'; textArea.style.top = '-9999px'; textArea.style.left = '-9999px';
             textArea.style.width = '2em'; textArea.style.height = '2em'; textArea.style.padding = '0';
             textArea.style.border = 'none'; textArea.style.outline = 'none'; textArea.style.boxShadow = 'none';
             textArea.style.background = 'transparent';
+
             textArea.value = textToCopy; document.body.appendChild(textArea);
             textArea.focus(); textArea.select();
             let success = false;
             try {
                 success = document.execCommand('copy');
-                if (success) { showCopySuccessFeedback(); }
-                else { alert("Failed to copy log using fallback method."); }
-            } catch (err) { alert("Error copying log using fallback: " + err); }
+                if (success) { showCopySuccessFeedback(); } else { alert("Fallback copy failed. Please copy manually."); }
+            } catch (err) { alert("Error using fallback copy method: " + err); }
             finally { document.body.removeChild(textArea); }
             return success;
         }
 
-        // --- Server Call Handlers ---
-        function handleSyncSuccess(result) {
-            console.log("Sync Result:", result);
-            if (!syncButton || !syncButtonText || !lastSyncInfo) { isSyncing = false; return; } // Basic check
-            isSyncing = false;
-            syncButton.disabled = false;
-            syncButtonText.textContent = 'Run Full Sync';
-
-            if (!result || !result.lastSyncResults) {
-                handleSyncFailure(new Error("Invalid result structure from server."));
-                return;
-            }
-
-            const status = result.lastSyncStatus || 'Unknown';
-            const resultsData = result.lastSyncResults;
-            const typeCounters = resultsData.typeCounters || {};
-            const totalErrors = resultsData.totalErrors || 0;
-            const hasErrors = totalErrors > 0;
-
-            setStatus(hasErrors ? 'error' : 'success', hasErrors ? 'Sync Completed with Errors' : 'Sync Completed');
-            lastSyncInfo.innerHTML = `<i data-feather="clock" class="icon"></i> Last Run: ${formatDisplayTimestamp(result.lastSyncTimestamp)}`;
-
-            // ** Update Metrics (Simplified for Sessions) **
-            const sessCounters = typeCounters.sessions || { created: 0, updated: 0 }; // Get session counters
-            updateMetric(metricSessionsChanges, (sessCounters.created || 0) + (sessCounters.updated || 0));
-            updateDurationMetric(result.lastSyncDuration || 0, hasErrors);
-
-            // Update Logs
-            clearLogs();
-            if (Array.isArray(resultsData.logs) && resultsData.logs.length > 0) {
-                resultsData.logs.forEach(logItem => addLog(logItem));
-            } else {
-                 addLog("<li><i data-feather='alert-circle' class='icon status-icon-warning'></i> Detailed log data not available.</li>");
-            }
-
-             // ** Update Recent Activity (Simplified Summary) **
-             let summaryText = ''; let summaryIcon = 'info'; let summaryClass = 'status-icon-info';
-             if (!hasErrors) {
-                 summaryIcon = 'check-circle'; summaryClass = 'status-icon-complete';
-                 const totalChanges = (sessCounters.created || 0) + (sessCounters.updated || 0);
-                 summaryText = `Sync complete. ${totalChanges} total changes processed for Sessions.`;
-             } else {
-                  summaryIcon = 'alert-triangle'; summaryClass = 'status-icon-error';
-                  summaryText = `Sync failed with ${totalErrors} error(s). Check detailed log.`;
-             }
-
-            // Add previous recent items (summary strings from Code.gs)
-            if (Array.isArray(resultsData.recentItems)) {
-                resultsData.recentItems.forEach(activityItem => {
-                     let icon = 'info'; let iconClass = 'status-icon-info';
-                     const lowerItem = String(activityItem).toLowerCase();
-                     if (lowerItem.includes('created') || lowerItem.includes('added')) { icon = 'plus-circle'; iconClass = 'status-icon-new'; }
-                     else if (lowerItem.includes('updated')) { icon = 'edit-2'; iconClass = 'status-icon-updated'; }
-                     else if (lowerItem.includes('deleted') || lowerItem.includes('removed')) { icon = 'trash-2'; iconClass = 'status-icon-error'; }
-                     else if (lowerItem.includes('skipped') || lowerItem.includes('checked') || lowerItem.includes('no changes')) { icon = 'skip-forward'; iconClass = 'status-icon-skipped'; }
-                     else if (lowerItem.includes('error')) { icon = 'alert-triangle'; iconClass = 'status-icon-error'; }
-                     addActivity(`<li><i data-feather='${icon}' class='icon ${iconClass}'></i> ${activityItem}</li>`);
-                 });
-             }
-             // Add the final summary line LAST (so it appears at the top)
-             addActivity(`<li><i data-feather='${summaryIcon}' class='icon ${summaryClass}'></i> <span class="log-message ${!hasErrors ? 'success-summary' : ''}">${summaryText}</span></li>`);
-
-            feather.replace(); // Re-render icons
+        /** Capitalizes the first letter of a string */
+        function capitalizeFirstLetter(string) {
+            if (!string) return '';
+            return string.charAt(0).toUpperCase() + string.slice(1);
         }
 
-        function handleSyncFailure(error) {
-            console.error("Sync Failure:", error);
-            if (!syncButton || !syncButtonText || !lastSyncInfo || !metricDuration) { isSyncing = false; return; } // Basic check
-            isSyncing = false;
-            syncButton.disabled = false;
-            syncButtonText.textContent = 'Run Full Sync';
-            setStatus('error', 'Sync Failed');
-            clearMetrics();
-            metricDuration.closest('.metric-card')?.classList.add('metric-error-highlight');
 
-            const errorMsg = `Sync process failed: ${error.message || error.toString()}`;
-            const errorItem = `<li><i data-feather='x-octagon' class='icon status-icon-error'></i><span class="log-message">${errorMsg}</span></li>`;
-            clearLogs();
-            addLog(errorItem); addActivity(errorItem);
+        // --- Polling Functions ---
 
-            lastSyncInfo.innerHTML = `<i data-feather="clock" class="icon"></i> Last Run: Failed`;
-            feather.replace();
-        }
-
-        function updateDashboardInitial(data) {
-            console.log("Initial Data:", data);
-             if (!lastSyncInfo || !metricSessionsChanges) return; // Check key elements
-
-            if (!data || !data.lastSyncResults) {
-                 console.error("Failed to load valid initial dashboard data.");
-                 addLog("<li><i data-feather='alert-triangle' class='icon status-icon-error'></i>Could not load initial status.</li>");
-                 setStatus('error', 'Load Error');
-                 clearMetrics(); feather.replace();
+        /** Starts polling the WP import status */
+        function startPollingWpStatus(importId) {
+            if (pollingIntervalId) clearInterval(pollingIntervalId); // Clear previous interval if any
+            if (!importId) {
+                 console.error("Cannot start polling without Import ID.");
                  return;
             }
 
-            const resultsData = data.lastSyncResults;
-            const typeCounters = resultsData.typeCounters || {};
-            const hasErrors = (resultsData.totalErrors || 0) > 0;
-            const lastStatus = data.lastSyncStatus || 'Unknown';
+            console.log(`Polling WP status starting for import ID: ${importId}`);
+            // Initial immediate check
+            google.script.run
+                 .withSuccessHandler(handleWpImportStatusUpdate)
+                 .withFailureHandler(handlePollingFailure)
+                 .getImportStatus(importId);
 
-            lastSyncInfo.innerHTML = `<i data-feather="clock" class="icon"></i> Last Run: ${formatDisplayTimestamp(data.lastSyncTimestamp)}`;
-            if (lastStatus.toLowerCase() === 'success') setStatus('success', 'Idle (Success)');
-            else if (lastStatus.toLowerCase() === 'failed') setStatus('error', 'Idle (Failed)');
-            else setStatus('idle', 'Idle');
+            // Set interval for subsequent checks
+            pollingIntervalId = setInterval(() => {
+                console.log("Polling WP status check for import ID:", importId);
+                google.script.run
+                    .withSuccessHandler(handleWpImportStatusUpdate)
+                    .withFailureHandler(handlePollingFailure)
+                    .getImportStatus(importId);
+            }, POLLING_INTERVAL_MS);
+        }
 
-            // ** Update Metrics (Simplified for Sessions) **
-            const sessCounters = typeCounters.sessions || { created: 0, updated: 0 };
-            updateMetric(metricSessionsChanges, (sessCounters.created || 0) + (sessCounters.updated || 0));
-            updateDurationMetric(data.lastSyncDuration || 0, hasErrors);
-
-            // Populate Logs
-            clearLogs();
-            if (Array.isArray(resultsData.logs) && resultsData.logs.length > 0) {
-                resultsData.logs.forEach(logItem => addLog(logItem));
-            } else { addLog("<li><i data-feather='info' class='icon status-icon-info'></i>No previous detailed logs found.</li>"); }
-
-             // ** Populate Recent Activity (Simplified Summary) **
-             if (Array.isArray(resultsData.recentItems) && resultsData.recentItems.length > 0) {
-                  resultsData.recentItems.forEach(activityItem => {
-                     let icon = 'info'; let iconClass = 'status-icon-info';
-                     const lowerItem = String(activityItem).toLowerCase();
-                     if (lowerItem.includes('created') || lowerItem.includes('added')) { icon = 'plus-circle'; iconClass = 'status-icon-new'; }
-                     else if (lowerItem.includes('updated')) { icon = 'edit-2'; iconClass = 'status-icon-updated'; }
-                     else if (lowerItem.includes('deleted') || lowerItem.includes('removed')) { icon = 'trash-2'; iconClass = 'status-icon-error'; }
-                     else if (lowerItem.includes('skipped') || lowerItem.includes('checked') || lowerItem.includes('no changes')) { icon = 'skip-forward'; iconClass = 'status-icon-skipped'; }
-                     else if (lowerItem.includes('error')) { icon = 'alert-triangle'; iconClass = 'status-icon-error'; }
-                     addActivity(`<li><i data-feather='${icon}' class='icon ${iconClass}'></i> ${activityItem}</li>`);
-                 });
+        /** Stops the polling interval */
+        function stopPollingWpStatus() {
+             if (pollingIntervalId) {
+                 clearInterval(pollingIntervalId);
+                 pollingIntervalId = null;
+                 console.log("Polling stopped.");
              }
-             // Add a final summary from last run LAST (so it appears at top)
-             const summaryIcon = lastStatus === 'Success' ? 'check-circle' : (lastStatus === 'Failed' ? 'alert-triangle' : 'info');
-             const summaryClass = lastStatus === 'Success' ? 'status-icon-complete' : (lastStatus === 'Failed' ? 'status-icon-error' : 'status-icon-info');
-             const totalChanges = (sessCounters.created || 0) + (sessCounters.updated || 0);
-             const summaryText = lastStatus === 'Success' ? `Last sync completed successfully (${totalChanges} total changes).` : (lastStatus === 'Failed' ? `Last sync failed.` : `No previous summary available.`);
-             addActivity(`<li><i data-feather='${summaryIcon}' class='icon ${summaryClass}'></i> <span class="log-message ${lastStatus === 'Success' ? 'success-summary' : ''}">${summaryText}</span></li>`);
+        }
 
+
+        // --- Server Call Handlers ---
+
+        /** Handles the result of runSheetSync_Dashboard */
+        function handleSheetSyncResult(result) {
+            console.log("Sheet Sync Result:", result);
+
+            // Add Logs from this specific run
+            result.lastSyncResults?.logs?.forEach(logItem => addLog(logItem));
+
+            // Add Summary Message to Recent Activity
+            result.lastSyncResults?.recentItems?.forEach(activityItem => addActivity(activityItem));
+
+            // Update Step 1 (Sync) UI
+            const syncCounters = result.lastSyncResults?.typeCounters?.sessions || {};
+            const duration = result.lastSyncDuration;
+            const syncSuccess = result.success;
+
+            if (syncSuccess) {
+                 updateStepUI('sync', 'complete', {
+                     statusText: `Sync Complete (${formatDuration(duration)}).`,
+                     detailsHtml: formatCounters(syncCounters)
+                 });
+                 // Recommend Step 2 (Import)
+                 updateStepUI('import', 'recommended', {
+                     statusText: 'Ready to update website.'
+                 });
+            } else {
+                const errorMsg = result.error || "Unknown sync error.";
+                 updateStepUI('sync', 'error', {
+                     statusText: `Sync Failed: ${errorMsg}`
+                 });
+                 // Keep Step 2 Not Recommended
+                 updateStepUI('import', 'not-recommended', {
+                     statusText: "Run 'Sync Sessions' successfully first."
+                 });
+            }
+
+            // Update Cache Clear button state (enabled if import step is complete)
+            const importStepElement = document.getElementById('step-import');
+             if (clearCacheMenuButton) {
+                 clearCacheMenuButton.disabled = !(importStepElement?.classList.contains('step-complete'));
+             }
+             feather.replace();
+        }
+
+
+                /** Handles the result of initiateWordPressImport */
+        function handleWpImportInitiationResult(result) {
+            console.log("WP Import Initiation Result:", result);
+            result.log?.split('\n').forEach(logLine => addLog(`<li><i data-feather='chevrons-right' class='icon status-icon-info'></i><span class="log-message">${logLine}</span></li>`)); // Add logs from the trigger function
+
+            if (result.success) {
+                // Trigger was sent successfully OR timed out (assume it might have worked)
+                // Update UI to show active/waiting state and start polling
+                let statusText = 'Waiting for server processing...';
+                if (result.status === 'already_active') {
+                    statusText = 'Website update already active. Monitoring status...';
+                } else if (result.status === 'trigger_timeout_error') {
+                    statusText = 'Trigger request timed out. Monitoring status...';
+                } else {
+                    // Default for triggered_waiting
+                    statusText = 'Trigger sent. Waiting for server processing...';
+                }
+
+                updateStepUI('import', 'active', {
+                    statusText: statusText,
+                    activeButtonText: 'Processing...' // Standard active text
+                });
+                addActivity(result.message || statusText); // Use message from server or the derived statusText
+                startPollingWpStatus(SESSIONS_IMPORT_ID); // Start polling the Handler cache
+
+            } else {
+                // Trigger failed (WP error, HTTP error, fetch error)
+                updateStepUI('import', 'error', {
+                    statusText: `Update Failed to Start: ${result.message || 'Unknown trigger error.'}`
+                });
+                addActivity(`Website Update Trigger Failed: ${result.message || 'Unknown trigger error.'}`);
+                stopPollingWpStatus(); // Don't poll if trigger failed
+                currentWpRunId = null; // Reset just in case
+                // Optional: Re-enable Sync step if it was disabled? Depends on desired flow.
+                // updateStepUI('sync', 'recommended', { statusText: 'Ready to sync.'});
+            }
+            feather.replace(); // Ensure icons update
+        }
+
+
+        /** Handles polled status updates from getImportStatus */
+        function handleWpImportStatusUpdate(statusResult) {
+            console.log("WP Import Status Update Received:", statusResult);
+            if (!statusResult) {
+                console.warn("Received null status update during polling.");
+                 updateStepUI('import', 'active', { // Keep active but show uncertainty
+                     statusText: 'Checking status... (Waiting for response)'
+                 });
+                 addActivity("Checking website update status... (Waiting for response)");
+                return;
+            }
+
+            // Optional: Add check against currentWpRunId if needed, but less critical now
+            // if (currentWpRunId && statusResult.runId && statusResult.runId !== currentWpRunId) { ... }
+
+            switch (statusResult.status) {
+                case 'pending':
+                case 'processing': // Treat processing the same as pending visually
+                case 'triggered': // Treat triggered the same as pending visually
+                     updateStepUI('import', 'active', {
+                         statusText: statusResult.message || 'Website update is processing...',
+                         activeButtonText: 'Processing...'
+                     });
+                     // Reduce redundant activity logs during polling if message is the same? Optional.
+                     // if(statusElement.textContent !== statusResult.message) { addActivity(statusResult.message || "Website update in progress..."); }
+                    break;
+                case 'complete':
+                    Logger.log("Polling received 'complete' status. Finalizing UI."); // Add log
+                    // ** NEW: Explicitly call the completion handler with the final data **
+                    handleWpImportCompletion(statusResult);
+                    // Now stop polling AFTER the UI has been updated with final numbers
+                    stopPollingWpStatus();
+                    break; // Keep the break statement
+                case 'failed': // Explicit failure from WP All Import (e.g., via hook data)
+                     stopPollingWpStatus();
+                     handleWpImportFailure(statusResult);
+                     break;
+                case 'error': // Error reported by getImportStatus itself (e.g., library call failure)
+                     stopPollingWpStatus();
+                     handleWpImportFailure(statusResult); // Treat library errors as failure for UI
+                     break;
+                case 'cancelled': // Status explicitly set to cancelled
+                    stopPollingWpStatus();
+                    handleWpImportCancellation(statusResult);
+                    break;
+                 case 'unknown': // e.g. cache miss after pending, or initial state
+                     updateStepUI('import', 'active', { // Keep active visually, but indicate potential issue
+                         statusText: 'Checking status... (Cache status unknown)',
+                         activeButtonText: 'Processing...'
+                     });
+                     addActivity("Checking website update status... (Status unknown)");
+                     break;
+                 case 'not_configured': // Should only happen on initial load, but handle defensively
+                     stopPollingWpStatus();
+                      updateStepUI('import', 'error', {
+                           statusText: 'Website Update not configured.',
+                           detailsHtml: ''
+                       });
+                       if(buttonImport) buttonImport.disabled = true;
+                       break;
+                default: // Any other status or unexpected value
+                    console.warn("Unknown WP import status received during polling:", statusResult.status);
+                    // Keep polling but don't flood logs
+                    updateStepUI('import', 'active', {
+                         statusText: `Processing... (Status: ${statusResult.status || 'N/A'})`,
+                         activeButtonText: 'Processing...'
+                     });
+            }
+        }
+        /** Handles successful completion */
+        function handleWpImportCompletion(statusResult) {
+            // Debug: Log the raw data received from the poll
+            console.log("WP Import Complete - Data received by UI:", statusResult);
+
+            // Calculate Details using the received statusResult
+            const details = statusResult ? formatCounters(statusResult) : 'Details unavailable.';
+
+            // Calculate Duration correctly from Unix seconds
+            const duration = (statusResult && statusResult.startTime && statusResult.endTime && typeof statusResult.startTime === 'number' && typeof statusResult.endTime === 'number')
+                                // Multiply by 1000 to convert Unix seconds to milliseconds for Date object
+                                ? formatDuration( (new Date(statusResult.endTime * 1000).getTime()) - (new Date(statusResult.startTime * 1000).getTime()) )
+                                : ''; // Calculate duration from Unix seconds - Removed extra ": ''"
+
+            // Debug: Log the calculated duration and formatted details string
+            console.log("WP Import Complete - Calculated Duration:", duration);
+            console.log("WP Import Complete - Formatted Import Details:", details);
+
+            // Update Step 2 UI
+            updateStepUI('import', 'complete', {
+                statusText: `Website Update Complete ${duration ? `(${duration})` : ''}.`,
+                detailsHtml: details + '<br/>Cache clear recommended.' // Display the correct details
+            });
+
+            // Update Activity Log
+            addActivity("Website Update Complete.");
+
+            // Clear State Variables
+            currentWpRunId = null;
+
+            // Enable Cache Clear Button
+            if (clearCacheMenuButton) {
+                clearCacheMenuButton.disabled = false;
+            }
+
+            // Make Sync Step Recommended Again
+            // Preserve existing details in Step 1 if possible
+            const lastSyncDetailsElement = document.getElementById('details-sync');
+            const syncDetailsHtml = lastSyncDetailsElement ? lastSyncDetailsElement.innerHTML : '';
+            updateStepUI('sync', 'recommended', {
+                statusText: 'Ready to sync.',
+                detailsHtml: syncDetailsHtml // Keep previous sync details
+            });
+
+            // Refresh Icons
+            feather.replace();
+        }
+
+        /** Handles failed import */
+         function handleWpImportFailure(statusResult) {
+             console.error("WP Import Failed:", statusResult);
+             const errorMsg = statusResult?.message || 'Unknown error during update.';
+             updateStepUI('import', 'error', {
+                 statusText: `Website Update Failed: ${errorMsg}`
+             });
+             addActivity(`Website Update Failed: ${errorMsg}`);
+             stopPollingWpStatus();
+             currentWpRunId = null;
+
+             // Make Sync Step Recommended again
+             updateStepUI('sync', 'recommended', { statusText: 'Ready to sync.'});
+             // Keep cache clear disabled on failure
+             if (clearCacheMenuButton) clearCacheMenuButton.disabled = true;
+             feather.replace();
+         }
+
+        /** Handles polling failure (network etc) */
+        function handlePollingFailure(error) {
+             console.error("Polling Failure:", error);
+             // Don't stop polling immediately, maybe transient error
+             updateStepUI('import', 'active', {
+                 statusText: 'Error checking status... Retrying.',
+                 activeButtonText: 'Processing...'
+             });
+             addActivity("Error checking website update status.");
+             // Consider adding a counter to stop polling after N consecutive errors
+         }
+
+        /** Handles explicit cancellation */
+        function handleWpImportCancellation(statusResult) {
+            console.log("WP Import Cancelled:", statusResult);
+            const cancelMsg = statusResult?.message || 'Update cancelled.';
+            updateStepUI('import', 'cancelled', {
+                 statusText: `Website Update Cancelled. ${cancelMsg}`
+            });
+            addActivity(`Website Update Cancelled.`);
+            stopPollingWpStatus();
+            currentWpRunId = null;
+
+            // Make Sync Step Recommended again
+             updateStepUI('sync', 'recommended', { statusText: 'Ready to sync.'});
+             // Keep cache clear disabled after cancellation
+             if (clearCacheMenuButton) clearCacheMenuButton.disabled = true;
+             feather.replace();
+        }
+
+        /** Handles result from cancelWordPressImport */
+        function handleCancelResult(result) {
+             console.log("Cancel Result:", result);
+             result.log?.split('\n').forEach(logLine => addLog(`<li><i data-feather='chevrons-right' class='icon status-icon-info'></i><span class="log-message">${logLine}</span></li>`));
+
+             // Re-enable cancel button regardless of success/fail? Or only on fail? Let's re-enable.
+             if(buttonCancelImport) {
+                 buttonCancelImport.disabled = false;
+                 buttonCancelImport.querySelector('.button-text').textContent = 'Cancel Update';
+             }
+
+             if (result.success) {
+                 // Let the next polling cycle pick up the actual cancelled status if WP changed it,
+                 // or just update the UI immediately for responsiveness. Immediate update is better.
+                 handleWpImportCancellation({ status: 'cancelled', message: result.message || 'Cancellation request sent.' });
+             } else {
+                  const errorMsg = result.message || "Failed to send cancel request.";
+                  updateStepUI('import', 'active', { // Keep active visually, but show error briefly
+                       statusText: `Cancel request failed: ${errorMsg}. Re-checking status...`,
+                       activeButtonText: 'Processing...'
+                  });
+                  addActivity(`Cancel request failed: ${errorMsg}`);
+                  // Do NOT stop polling here if cancel failed - it might still be running.
+             }
+             feather.replace();
+        }
+
+        /** Handles result from clearBreezeCache */
+        function handleCacheClearResult(result) {
+             console.log("Cache Clear Result:", result);
+             result.log?.split('\n').forEach(logLine => addLog(`<li><i data-feather='chevrons-right' class='icon status-icon-info'></i><span class="log-message">${logLine}</span></li>`));
+
+             // Re-enable the button in the options menu
+             if(clearCacheMenuButton) clearCacheMenuButton.disabled = false;
+
+             if (result.success) {
+                 addActivity("Website Cache Cleared Successfully.");
+                 // Update the details of the import step to remove the recommendation?
+                 const importDetails = document.getElementById('details-import');
+                 if (importDetails) {
+                    // Remove the specific "Cache clear recommended" text if present
+                    importDetails.innerHTML = importDetails.innerHTML.replace('<br>Cache clear recommended.', '');
+                 }
+             } else {
+                  addActivity(`Cache Clear Failed: ${result.message}`);
+                  alert(`Cache Clear Failed: ${result.message}`); // Show alert for this action
+             }
+             feather.replace();
+        }
+
+        /** Handles result from clearSpecificImportCache */
+        function handleClearImportStatusResult(result) {
+            console.log("Clear Import Status Result:", result);
+            if (result && result.success) {
+                alert(`Success: ${result.message}`);
+                addActivity(`Manual status reset for Import ID ${SESSIONS_IMPORT_ID} successful.`);
+                // Refresh the dashboard state to reflect the change
+                stopPollingWpStatus(); // Ensure polling is stopped if it was running
+                currentWpRunId = null; // Clear tracked run ID
+                // Fetch the latest data to update the entire UI correctly
+                addLog("<li><i data-feather='refresh-cw' class='icon status-icon-info'></i><span class='log-message'>Refreshing dashboard data after manual status reset...</span></li>");
+                feather.replace();
+                google.script.run
+                     .withSuccessHandler(updateDashboardInitial)
+                     .withFailureHandler((err) => {
+                          console.error("Failed to reload data after cache clear:", err);
+                          addLog(`<li><i data-feather='alert-triangle' class='icon status-icon-error'></i><span class='log-message'>Error reloading dashboard status after reset: ${err.message || err}</span></li>`);
+                     })
+                     .getDashboardData();
+            } else {
+                const errorMsg = result ? result.message : "Unknown error occurred.";
+                alert(`Error: ${errorMsg}`);
+                addActivity(`Manual status reset for Import ID ${SESSIONS_IMPORT_ID} failed: ${errorMsg}`);
+            }
+        }
+
+
+        /** Populates the dashboard with initial data on load */
+        function updateDashboardInitial(data) {
+            console.log("Initial Data Received:", data);
+            clearLogs();
+            addLog("<li><i data-feather='info' class='icon status-icon-info'></i><span class='log-message'>Dashboard loaded. Checking initial states...</span></li>");
+
+            const lastSyncStatus = data.lastSyncStatus;
+            const lastSyncTime = data.lastSyncTimestamp;
+            const lastSyncDuration = data.lastSyncDuration;
+            const syncCounters = data.lastSyncResults?.typeCounters?.sessions || {};
+            const wpStatusData = data.wpImportStatus; // Object like { status: 'pending'/'complete'/'error', ... }
+
+            // Determine if WP Import is currently active based on handler status
+            let wpIsActive = wpStatusData &&
+                             (wpStatusData.status === 'pending' ||
+                              wpStatusData.status === 'processing' ||
+                              wpStatusData.status === 'triggered');
+
+            // --- Set Initial Step States ---
+
+            // Handle Active WP Import FIRST
+            if (wpIsActive) {
+                console.log("Initial state: WP Import is active/pending. Starting polling.");
+                // Update Step 2 (Import) UI
+                updateStepUI('import', 'active', {
+                    statusText: wpStatusData.message || 'Website update in progress...',
+                    activeButtonText: 'Processing...'
+                });
+                currentWpRunId = wpStatusData.runId || null; // Store ID if available
+                startPollingWpStatus(SESSIONS_IMPORT_ID); // Start polling
+
+                // Update Step 1 (Sync) UI - Show historical data but NOT recommended
+                const syncHistoryIcon = lastSyncStatus === 'Success' ? 'check' : (lastSyncStatus === 'Failed' ? 'x' : 'minus');
+                const syncHistoryDetails = `Last: ${formatDisplayTimestamp(lastSyncTime)} <i data-feather="${syncHistoryIcon}" class="icon" style="width:12px; height:12px;"></i> ${formatCounters(syncCounters)} (${formatDuration(lastSyncDuration)})`;
+                // Set state based on historical success/fail but keep status text indicating import is running
+                updateStepUI('sync', lastSyncStatus === 'Success' ? 'complete' : (lastSyncStatus === 'Failed' ? 'error' : 'ready'), {
+                    statusText: `Website update in progress... Sync disabled.`,
+                    detailsHtml: lastSyncStatus !== 'Never Run' ? syncHistoryDetails : ''
+                });
+                // Disable primary sync button while import runs
+                 if (buttonSync) buttonSync.disabled = true;
+
+
+            } else {
+                // WP Import is NOT active - Default to recommending Sync
+                console.log("Initial state: WP Import not active. Recommending Sync.");
+                stopPollingWpStatus(); // Ensure no polling is running initially
+
+                // Step 1: Sync - Recommended, show last run details
+                const syncHistoryIcon = lastSyncStatus === 'Success' ? 'check' : (lastSyncStatus === 'Failed' ? 'x' : 'minus');
+                const syncHistoryDetails = `Last: ${formatDisplayTimestamp(lastSyncTime)} <i data-feather="${syncHistoryIcon}" class="icon" style="width:12px; height:12px;"></i> ${formatCounters(syncCounters)} (${formatDuration(lastSyncDuration)})`;
+                updateStepUI('sync', 'recommended', {
+                    statusText: 'Ready to sync sessions.',
+                    detailsHtml: lastSyncStatus !== 'Never Run' ? syncHistoryDetails : 'No previous sync data.'
+                });
+
+                // Step 2: Import - Not recommended initially, show last run details
+                let importStatusText = "Run 'Sync Sessions' first.";
+                let importDetailsHtml = '';
+                let importInitialState = 'not-recommended';
+
+                if (wpStatusData) {
+                    // Display details of the LAST completed/failed/cancelled import
+                    if (wpStatusData.status === 'complete' || wpStatusData.status === 'failed' || wpStatusData.status === 'cancelled') {
+                         const importHistoryIcon = wpStatusData.status === 'complete' ? 'check' : 'x';
+                         const importTimestamp = wpStatusData.libraryCheckTime || (wpStatusData.endTime ? new Date(wpStatusData.endTime * 1000).toISOString() : null); // Use check time or end time
+                         importDetailsHtml = `Last: ${formatDisplayTimestamp(importTimestamp)} <i data-feather="${importHistoryIcon}" class="icon" style="width:12px; height:12px;"></i> ${formatCounters(wpStatusData)}`;
+                         if (wpStatusData.status === 'complete') importStatusText = 'Website update complete. Sync recommended.'; // Update status text if last was complete
+                         else if (wpStatusData.status === 'failed') importStatusText = 'Last update failed. Run Sync first.';
+                         else if (wpStatusData.status === 'cancelled') importStatusText = 'Last update cancelled. Run Sync first.';
+                         // Keep state 'not-recommended' until sync is run again
+                    } else if (wpStatusData.status === 'unknown') {
+                         importStatusText = 'No previous update status found. Run Sync first.';
+                         importInitialState = 'not-recommended';
+                    } else if (wpStatusData.status === 'not_configured') {
+                        importInitialState = 'error';
+                        importStatusText = 'Website Update not configured.';
+                        if(buttonImport) buttonImport.disabled = true; // Disable button if not configured
+                    }
+                }
+
+                updateStepUI('import', importInitialState, {
+                    statusText: importStatusText,
+                    detailsHtml: importDetailsHtml
+                });
+            }
+
+            // Set initial state of Cache Clear menu item (enabled ONLY if last WP import was complete)
+            if (clearCacheMenuButton) {
+                 clearCacheMenuButton.disabled = !(wpStatusData && wpStatusData.status === 'complete');
+            }
+
+            // Populate Logs from last stored run (sheet sync only initially stored)
+            data.lastSyncResults?.logs?.forEach(logItem => addLog(logItem));
+            data.lastSyncResults?.recentItems?.forEach(activityItem => addActivity(activityItem));
+
+            addLog("<li><i data-feather='check-circle' class='icon status-icon-complete'></i><span class='log-message'>Initial status check complete.</span></li>");
             feather.replace(); // Render all icons
         }
 
 
         // --- Initial Load and Event Listener Assignment ---
         window.addEventListener('load', () => {
-             console.log("Dashboard loaded.");
+            console.log("Dashboard loaded.");
 
-             // Assign DOM Elements
-             syncButton = document.getElementById('syncButton');
-             syncButtonText = document.getElementById('syncButtonText');
-             lastSyncInfo = document.getElementById('last-sync-info');
-             statusIndicator = document.getElementById('status-indicator');
-             statusText = document.getElementById('status-text');
-             metricsSection = document.getElementById('metrics-section');
-             metricSessionsChanges = document.getElementById('metric-sessions-changes'); // Updated ID
-             metricDuration = document.getElementById('metric-duration');
-             recentActivityList = document.getElementById('recent-activity-list');
-             detailedLogList = document.getElementById('detailed-log-list');
-             themeCheckbox = document.getElementById('theme-checkbox');
-             htmlElement = document.documentElement;
-             copyLogButton = document.getElementById('copyLogButton');
-             optionsMenuButton = document.getElementById('optionsMenuButton');
-             optionsMenu = document.getElementById('optionsMenu');
+            // Assign DOM Elements
+            themeCheckbox = document.getElementById('theme-checkbox');
+            htmlElement = document.documentElement;
+            copyLogButton = document.getElementById('copyLogButton');
+            optionsMenuButton = document.getElementById('optionsMenuButton');
+            optionsMenu = document.getElementById('optionsMenu');
+            clearCacheMenuButton = document.getElementById('clearCacheMenuButton');
+            resetImportStatusButton = document.getElementById('resetImportStatusButton'); // Added
 
-            // Basic check if elements were found
-            if (!syncButton || !themeCheckbox || !copyLogButton || !optionsMenuButton || !optionsMenu || !detailedLogList || !metricSessionsChanges) {
-                 console.error("CRITICAL ERROR: Failed to find essential UI elements on load.");
-                 setStatus('error', 'UI Load Error');
-                 return;
-             }
+            // Step 1 Elements
+            stepSync = document.getElementById('step-sync');
+            indicatorSync = document.getElementById('indicator-sync');
+            statusSync = document.getElementById('status-sync');
+            detailsSync = document.getElementById('details-sync');
+            buttonSync = document.getElementById('button-sync');
+            buttonResync = document.getElementById('button-resync');
+            buttonRetrySync = document.getElementById('button-retry-sync');
+
+            // Step 2 Elements
+            stepImport = document.getElementById('step-import');
+            indicatorImport = document.getElementById('indicator-import');
+            statusImport = document.getElementById('status-import');
+            detailsImport = document.getElementById('details-import');
+            buttonImport = document.getElementById('button-import');
+            buttonReimport = document.getElementById('button-reimport');
+            buttonRetryImport = document.getElementById('button-retry-import');
+            buttonCancelImport = document.getElementById('button-cancel-import');
+
+            // Log Elements
+            recentActivityList = document.getElementById('recent-activity-list');
+            detailedLogList = document.getElementById('detailed-log-list');
+
+            // Basic check for essential elements
+            if (!buttonSync || !buttonImport || !themeCheckbox || !copyLogButton || !optionsMenuButton || !optionsMenu || !clearCacheMenuButton || !resetImportStatusButton) {
+                console.error("CRITICAL ERROR: Failed to find essential UI elements on load.");
+                alert("Dashboard UI failed to load correctly. Please refresh or contact support.");
+                return;
+            }
 
             // --- Attach Event Listeners ---
-            syncButton.addEventListener('click', () => {
-                if (isSyncing) return;
-                showLoadingState();
-                google.script.run
-                    .withSuccessHandler(handleSyncSuccess)
-                    .withFailureHandler(handleSyncFailure)
-                    .runFullSync_Dashboard(); // This function name must match Code.gs
+
+            // Step 1: Sync (All buttons trigger the same action)
+            [buttonSync, buttonResync, buttonRetrySync].forEach(btn => {
+                btn?.addEventListener('click', () => {
+                    // Disable other sync buttons immediately
+                    [buttonSync, buttonResync, buttonRetrySync].forEach(b => { if(b && b !== btn) b.disabled = true; });
+                    updateStepUI('sync', 'active', { statusText: 'Syncing sessions...', activeButtonText: 'Syncing...' });
+                    addActivity("Started Session Sync.");
+                    google.script.run
+                        .withSuccessHandler(handleSheetSyncResult)
+                        .withFailureHandler(handleSheetSyncResult) // Use same handler, check result.success
+                        .runSheetSync_Dashboard();
+                });
             });
 
+            // Step 2: Import (Trigger Import on WP)
+            [buttonImport, buttonReimport, buttonRetryImport].forEach(btn => {
+                btn?.addEventListener('click', () => {
+                    if (!SESSIONS_IMPORT_ID) {
+                        alert("Error: Website Update Import ID is not configured.");
+                        return;
+                    }
+                    // Disable other import buttons immediately
+                    [buttonImport, buttonReimport, buttonRetryImport].forEach(b => { if(b && b !== btn) b.disabled = true; });
+                    // Set UI to active state immediately, indicating trigger attempt
+                    updateStepUI('import', 'active', { statusText: 'Sending trigger request...', activeButtonText: 'Triggering...' });
+                    addActivity("Sending website update trigger request..."); // More accurate message
+                    stopPollingWpStatus(); // Ensure no old polling is running before triggering
+
+                    // --- CALL THE CORRECT SERVER FUNCTION ---
+                    google.script.run
+                        .withSuccessHandler(handleWpImportInitiationResult) // Use the correct handler
+                        .withFailureHandler(handleWpImportInitiationResult) // Use the same handler, check result.success
+                        .initiateWordPressImport(SESSIONS_IMPORT_ID);     // Call the trigger function
+                });
+            });
+
+            // Step 2: Cancel Import
+            buttonCancelImport?.addEventListener('click', () => {
+                if (!SESSIONS_IMPORT_ID) {
+                    alert("Error: Website Update Import ID is not configured.");
+                    return;
+                }
+                if (!confirm("Are you sure you want to attempt to cancel the current website update?")) return;
+
+                buttonCancelImport.disabled = true;
+                buttonCancelImport.querySelector('.button-text').textContent = 'Cancelling...';
+                addActivity("Sending cancel request for website update...");
+
+                google.script.run
+                    .withSuccessHandler(handleCancelResult)
+                    .withFailureHandler(handleCancelResult) // Check result.success
+                    .cancelWordPressImport(SESSIONS_IMPORT_ID);
+            });
+
+            // Options Menu: Clear Cache
+            clearCacheMenuButton?.addEventListener('click', () => {
+                if(clearCacheMenuButton.disabled) return;
+                clearCacheMenuButton.disabled = true;
+                addActivity("Started Website Cache Clear.");
+                optionsMenu.classList.add('hidden'); // Close menu
+
+                google.script.run
+                    .withSuccessHandler(handleCacheClearResult)
+                    .withFailureHandler(handleCacheClearResult) // Check result.success
+                    .clearBreezeCache();
+            });
+
+            // Options Menu: Reset Stuck Import Status
+            resetImportStatusButton?.addEventListener('click', () => {
+                if (!SESSIONS_IMPORT_ID) {
+                    alert("Error: Sessions Import ID is not configured. Cannot reset status.");
+                    return;
+                }
+                const warningMsg = `WARNING:\n\n` +
+                                `This will manually clear the 'pending'/'processing' status for the Sessions website update (Import ID: ${SESSIONS_IMPORT_ID}) stored by the handler script.\n\n` +
+                                `Only use this if the update process is DEFINITELY finished or cancelled, but the dashboard is still stuck showing 'Processing...'.\n\n` +
+                                `Clearing the status while an import is actively running could cause delayed or incorrect status reporting until the next import completes.\n\n` +
+                                `Are you sure you want to reset the status?`;
+
+                if (confirm(warningMsg)) {
+                    addActivity(`Attempting manual reset for Sessions import status (ID: ${SESSIONS_IMPORT_ID})...`);
+                    optionsMenu.classList.add('hidden'); // Close menu
+
+                    google.script.run
+                        .withSuccessHandler(handleClearImportStatusResult)
+                        .withFailureHandler(handleClearImportStatusResult) // Use same handler, check result.success
+                        .clearSpecificImportCache(SESSIONS_IMPORT_ID); // Pass the specific ID
+                }
+            });
+
+
+            // Theme Switch
             themeCheckbox.addEventListener('change', function() {
                 const theme = this.checked ? 'light' : 'dark';
                 htmlElement.setAttribute('data-theme', theme);
@@ -674,45 +1279,56 @@
                 feather.replace();
             });
 
+            // Copy Log Button
             copyLogButton.addEventListener('click', () => {
-                if (!detailedLogList) return;
                 const logItems = detailedLogList.querySelectorAll('li .log-message');
-                const logMessages = Array.from(logItems).map(item => item.textContent.trim()).reverse();
-                const logText = logMessages.join('\n');
+                const logText = Array.from(logItems).map(item => item.textContent.trim()).reverse().join('\n');
                 if (logText) {
                     if (navigator.clipboard && navigator.clipboard.writeText) {
-                        navigator.clipboard.writeText(logText).then(showCopySuccessFeedback).catch(err => tryExecCommandCopy(logText));
-                    } else { tryExecCommandCopy(logText); }
-                } else { alert("No log content to copy."); }
+                        navigator.clipboard.writeText(logText).then(showCopySuccessFeedback).catch(err => {
+                            console.warn("Clipboard API failed, falling back:", err);
+                            tryExecCommandCopy(logText);
+                        });
+                    } else {
+                        console.warn("Clipboard API not supported, using fallback.");
+                        tryExecCommandCopy(logText);
+                     }
+                } else { alert("No detailed log content to copy."); }
             });
 
+            // Options Menu Toggle
             optionsMenuButton.addEventListener('click', (event) => {
-                event.stopPropagation();
+                event.stopPropagation(); // Prevent doc listener from closing it immediately
                 optionsMenu.classList.toggle('hidden');
-                if (!optionsMenu.classList.contains('hidden')) feather.replace();
+                if (!optionsMenu.classList.contains('hidden')) feather.replace(); // Redraw icons when shown
             });
 
-             // --- Set Initial Theme ---
+            // --- Set Initial Theme ---
             const savedTheme = localStorage.getItem('theme');
             if (savedTheme) {
                 htmlElement.setAttribute('data-theme', savedTheme);
                 if (savedTheme === 'light') themeCheckbox.checked = true;
+            } else if (window.matchMedia && window.matchMedia('(prefers-color-scheme: light)').matches) {
+                 // Optional: respect browser preference if no saved theme
+                 htmlElement.setAttribute('data-theme', 'light');
+                 themeCheckbox.checked = true;
             } else {
-                // Ensure checkbox matches default dark theme if no preference saved
-                themeCheckbox.checked = false;
+                themeCheckbox.checked = false; // Default dark
             }
 
-             // --- Fetch Initial Data ---
-             setStatus('idle', 'Loading...');
-             clearLogs();
-             addLog("<li><i data-feather='loader' class='icon status-icon-checking'></i> Loading previous sync status...</li>");
-             clearMetrics();
-             feather.replace(); // Render loading icons
+            // --- Fetch Initial Data ---
+            addLog("<li><i data-feather='loader' class='icon status-icon-checking'></i><span class='log-message'>Loading dashboard status...</span></li>");
+            feather.replace();
 
-             google.script.run
-                 .withSuccessHandler(updateDashboardInitial)
-                 .withFailureHandler((err) => handleSyncFailure(new Error("Could not load initial data.")))
-                 .getDashboardData(); // This function name must match Code.gs
+            google.script.run
+                .withSuccessHandler(updateDashboardInitial)
+                .withFailureHandler((err) => {
+                    console.error("Failed to load initial data:", err);
+                    addLog(`<li><i data-feather='alert-triangle' class='icon status-icon-error'></i><span class='log-message'>Error loading initial dashboard status: ${err.message || err}</span></li>`);
+                    updateStepUI('sync', 'error', { statusText: 'Load Error' });
+                    updateStepUI('import', 'error', { statusText: 'Load Error' });
+                })
+                .getDashboardData();
 
         }); // End window load listener
 
@@ -725,6 +1341,9 @@
         });
 
     </script>
+    <!-- ============================================= -->
+    <!--                JAVASCRIPT END                 -->
+    <!-- ============================================= -->
 
 </body>
 </html>

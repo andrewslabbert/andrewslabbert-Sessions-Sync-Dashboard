@@ -1,39 +1,52 @@
 /*******************************************************************************
- * Sessions Sync Dashboard (Phase 1: Sheet Sync) - v1.1 Simple Lookup
- * Description: Fetches data from the Airtable 'Sessions' table, relying on
- *              Airtable LOOKUP fields for linked data display names. Performs
- *              an incremental sync to a dedicated Google Sheet ('sessions').
- *              Change detection uses the 'publish_timestamp' field.
- *              Uses Airtable's native Record ID as the unique identifier.
- * Based On:    Partners Sync Dashboard v2.0 structure.
- * Version:     1.1 - Sessions (Lookup Field Strategy)
+ * Sessions Sync Dashboard (Phase 2: WP Import Control) - v1.2 WP Integration
+ * Description: Fetches data from Airtable, syncs to Google Sheet, triggers
+ *              WP All Import, monitors status via cache, and allows cache clearing.
+ * Based On:    Sessixns Sync v1.1 & Events Sync Dashboard v2.0 structure.
+ * Version:     1.3 - Sessions (WP Import Integration)
  *******************************************************************************/
 
 /********************************************************
  * Global Configuration
  ********************************************************/
 
-// --- Retrieve Airtable API Token from Script Properties ---
+// --- Retrieve Secrets from Script Properties ---
 const AIRTABLE_API_TOKEN = PropertiesService.getScriptProperties().getProperty('AIRTABLE_API_TOKEN');
+const WP_IMPORT_KEY = PropertiesService.getScriptProperties().getProperty('WP_IMPORT_KEY'); // <-- ADDED
+
+// --- Check if properties were retrieved successfully ---
 if (!AIRTABLE_API_TOKEN) {
   Logger.log("ERROR: AIRTABLE_API_TOKEN not found in Script Properties. Please run storeSecrets() or set it manually.");
   throw new Error("Missing required Script Property: AIRTABLE_API_TOKEN");
 }
+if (!WP_IMPORT_KEY) { // <-- ADDED CHECK
+  Logger.log("ERROR: WP_IMPORT_KEY not found in Script Properties. Please run storeSecrets() or set it manually.");
+  throw new Error("Missing required Script Property: WP_IMPORT_KEY");
+}
 
-// --- Airtable Configuration ---
-const AIRTABLE_BASE_ID_SESSIONS = 'apphmPNiTdmcknmfs'; // Your Sessions Base ID
-const AIRTABLE_TABLE_SESSIONS_ID = 'tblnvqOHWXe5VQanu'; // Your Sessions Table ID
+// --- Airtable Configuration (Existing) ---
+const AIRTABLE_BASE_ID_SESSIONS = 'apphmPNiTdmcknmfs';
+const AIRTABLE_TABLE_SESSIONS_ID = 'tblnvqOHWXe5VQanu';
 
 // --- Google Sheet Configuration ---
 const SESSIONS_SHEET_NAME = "sessions";
+const SESSIONS_IMPORT_LOG_SHEET_NAME = "sessions_wp_import_logs"; // <-- ADDED (Specific Name)
+const SESSIONS_CALLBACK_VERIFICATION_SHEET_NAME = "sessions_wp_callback_data"; // <-- ADDED (Specific Name)
 
-// --- Script Configuration ---
+// --- WordPress Configuration --- // 
+const WP_IMPORT_BASE_URL = 'https://wordpress-1204105-4784464.cloudwaysapps.com/wp-load.php';
+const WP_ACTION_TIMEOUT = 45; // Seconds for actions like cache clear, initiate call
+
+// --- Script Configuration (Existing + Cache) ---
 const MAX_FETCH_RETRIES = 3;
 const BASE_RETRY_DELAY_MS = 500;
 const INTER_PAGE_DELAY_MS = 200;
+const CACHE_EXPIRATION_SECONDS = 21600; // 6 hours for WP Import status cache
+
 
 /********************************************************
- * Workflow Configuration Object (Sessions Only - Simple)
+ * Workflow Configuration Object (Sessions Only - Updated)
+ * Includes WP Import ID for potential future use server-side, though currently passed from UI
  ********************************************************/
 const CONFIG = {
   sessions: {
@@ -41,136 +54,39 @@ const CONFIG = {
     airtable: {
       baseId: AIRTABLE_BASE_ID_SESSIONS,
       tableId: AIRTABLE_TABLE_SESSIONS_ID,
-      viewName: 'Web', // Optional: Specify an Airtable view name if needed
+      viewName: 'Google Apps Script',
       fields: [
          // **** ACTION: Verify/Edit this list to match desired sheet columns ****
-         'title',
-         'session_sku',
-         'id', // Assuming this is a specific ID field from Airtable, not the native one
-         'slug',
-         'session_description',
-         'excerpt',
-         'date_short',
-         'date_long',
-         'featured_image_link',
-         'listing_image_link',
-         'no_words_image_link',
-         'banner_image_link',
-         'series_category', // Keep if needed, ensure it's text or a lookup if needed
-         'topics_title',      // INCLUDE the Lookup field for Topics
-         'speaker_title',     // INCLUDE the Lookup field for Speaker/Author
-         'youtube_link',
-         'pdf_image_1',
-         'pdf_title_1',
-         'pdf_title_2',
-         'spotify_podcast',
-         'apple_podcast',
-         'series_title',      // INCLUDE the Lookup field for Series
-         'series_sku',
-         '_aioseo_description',
-         'permalink',
-         'website_status',
-         'last_modified',     // Keep if needed
-         'publish_timestamp', // Timestamp field MUST be listed here
-         'publish_status',
-         'session_description_cleanup',
-         'series_type',
-         'global_categories', // Keep if needed, ensure it's text or a lookup if needed
-         'alt_link',
-         'pdf_link_1',
-         'pdf_image_2',
-         'pdf_link_2'
-         // REMOVED: 'topics', 'speaker', 'series' (Original Linked Record fields)
-         // Assuming you only want the titles via the Lookup fields above.
-         // Add them back ONLY if you need the raw Airtable Record IDs (e.g., "rec...") in the sheet.
+         'title', 'session_sku', 'id', 'slug', 'session_description', 'excerpt',
+         'date_short', 'date_long', 'featured_image_link', 'listing_image_link',
+         'no_words_image_link', 'banner_image_link', 'series_category',
+         'topics_title', 'speaker_title', 'youtube_link', 'pdf_image_1',
+         'pdf_title_1', 'pdf_title_2', 'spotify_podcast', 'apple_podcast',
+         'series_title', 'series_sku', '_aioseo_description', 'permalink',
+         'website_status', 'last_modified', 'publish_timestamp', 'publish_status',
+         'session_description_cleanup', 'series_type', 'global_categories',
+         'alt_link', 'pdf_link_1', 'pdf_image_2', 'pdf_link_2'
       ],
-      // recordIdField: null, // Set to null/remove as we use the native Airtable ID
-      timestampField: 'publish_timestamp', // Field used for detecting changes
-      // linkedFields: {} // REMOVED - Not needed with Lookup fields
+      timestampField: 'publish_timestamp',
     },
     sheetName: SESSIONS_SHEET_NAME,
-    syncFunctionName: 'syncAirtableToSheet' // Uses the generic sync function
+    syncFunctionName: 'syncAirtableToSheet', // Uses the generic sync function
+    wpImportId: '31' // !! ACTION: Replace with the WP All Import ID for Sessions (Used by UI) !!
   }
 };
 
-/********************************************************
- * Secret Management (Run Once)
- * Stores sensitive information in Script Properties.
- ********************************************************/
-function storeSecrets() {
-  try {
-    // !! IMPORTANT !! Replace with your actual API Token before running MANUALLY from the editor!
-    const tokenToStore = 'PASTE_YOUR_AIRTABLE_API_TOKEN_HERE'; // <--- PASTE TOKEN HERE FOR MANUAL RUN
 
-    if (tokenToStore === 'PASTE_YOUR_AIRTABLE_API_TOKEN_HERE' || !tokenToStore) {
-        Logger.log("WARN: Please paste your actual Airtable API token into the script before running storeSecrets().");
-        return;
-    }
-
-    PropertiesService.getScriptProperties().setProperty('AIRTABLE_API_TOKEN', tokenToStore);
-    Logger.log("Secret 'AIRTABLE_API_TOKEN' stored successfully in Script Properties.");
-
-  } catch (e) {
-    Logger.log("ERROR storing secrets: " + e);
-    throw new Error("Failed to store secrets. Check logs and script permissions.");
-  }
-}
-
-/********************************************************
- * Top-Level Function (Runs sync for all configured types - currently just Sessions)
- * Calls the main sync function for each configured entity.
- ********************************************************/
-function runFullSync() {
-  Logger.log("--- Starting Full Airtable to Sheets Sync ---");
-  var overallStatus = true;
-  var masterLog = ["Sync Run Started: " + new Date().toLocaleString()];
-  var recentItemsCollector = []; // Collects summary actions across all syncs
-
-  // Simple logger function for this run
-  function addLog(msg) {
-    masterLog.push(msg);
-    Logger.log(msg); // Log to standard GAS logger
-  }
-
-  // Loop through each configuration in CONFIG (currently only 'sessions')
-  for (var key in CONFIG) {
-    if (CONFIG.hasOwnProperty(key)) {
-      var config = CONFIG[key];
-      var syncFunctionName = config.syncFunctionName || 'syncAirtableToSheet'; // Default to generic
-
-      addLog("\n--- Processing: " + config.type.toUpperCase() + " (Sheet: " + config.sheetName + ") ---");
-
-      try {
-        // Dynamically call the function specified in config
-        var result = this[syncFunctionName](config, addLog, recentItemsCollector);
-
-        addLog("Result for " + config.type.toUpperCase() + ": " + (result.success ? "SUCCESS" : "FAILED"));
-        if (result.error) {
-          addLog("ERROR: " + result.error); // Log the specific error reported by the sync function
-          overallStatus = false;
-        }
-        addLog("Counters: " + JSON.stringify(result.counters)); // Log the summary counters
-
-      } catch (e) {
-        // Catch unexpected errors during the execution of the sync function itself
-        addLog("FATAL ERROR during " + config.type + " sync: " + e.message + (e.stack ? "\nStack: " + e.stack : ""));
-        overallStatus = false;
-      }
-    }
-  }
-
-  Logger.log("\n--- Recent Actions Summary (" + recentItemsCollector.length + " items) ---");
-  recentItemsCollector.forEach(item => Logger.log("- " + item)); // Log summary actions
-
-  Logger.log("--- Full Sync Run Complete ---");
-  Logger.log("Overall Status: " + (overallStatus ? "SUCCESS" : "FAILED (Check logs for details)"));
-  // Optional: Could write masterLog array to a dedicated log sheet here if needed
-}
-
+// =======================================================
+//             AIRTABLE & SHEET SYNC FUNCTIONS
+//        (fetchAirtableData_, formatFieldValue_,
+//     standardizeTimestampForComparison_, syncAirtableToSheet)
+//
+//          --- NO CHANGES NEEDED IN THIS SECTION ---
+//     Keep the existing functions from your previous version.
+// =======================================================
 
 /********************************************************
  * Helper: Fetch Airtable Data with Retries
- * Fetches all records for a given table/view/fields config.
  ********************************************************/
 function fetchAirtableData_(apiUrl, fieldsToFetch, viewName) {
   // Uses global AIRTABLE_API_TOKEN defined at the top
@@ -270,8 +186,6 @@ function fetchAirtableData_(apiUrl, fieldsToFetch, viewName) {
 
 /********************************************************
  * Helper: Format Field Value Consistently (SIMPLE VERSION)
- * Handles basic type conversions. No special linked field logic needed.
- * Relies on Airtable Lookups providing text values directly.
  ********************************************************/
 function formatFieldValue_(value) {
     if (value === null || typeof value === 'undefined') {
@@ -326,8 +240,6 @@ function formatFieldValue_(value) {
 
 /********************************************************
  * Helper: Standardize Timestamp for Comparison
- * Converts various inputs (Date object, ISO string, potentially sheet formatted string)
- * into a consistent "yyyy-MM-dd HH:mm:ss" format or empty string if invalid/null.
  ********************************************************/
 function standardizeTimestampForComparison_(timestampValue, recordIdForLog, sourceInfo) {
     var formattedTimestamp = '';
@@ -391,9 +303,361 @@ function standardizeTimestampForComparison_(timestampValue, recordIdForLog, sour
     return formattedTimestamp; // Returns "yyyy-MM-dd HH:mm:ss" or ''
 }
 
+/*******************************************************************************
+ * syncAirtableToSheet (CORE SHEET SYNC FUNCTION - v1.3 Incremental + Targeted Delete)
+ * Fetches data from a specified Airtable View, performs incremental updates/appends
+ * based on timestamp, and deletes rows from the sheet that are NO LONGER in the view.
+ * Provides simplified summary feedback.
+ *******************************************************************************/
+ function syncAirtableToSheet(config, addLog, recentItemsCollector) { // Renamed recentItems param for clarity
+    var counters = { updated: 0, skipped: 0, created: 0, deleted: 0 };
+    var logArray = [];
+
+    // --- Internal logging helper ---
+    function logEntry(msg) {
+        var timeStamped = "[" + new Date().toLocaleTimeString() + "] ";
+        var prefix = "[" + (config.type || 'SYNC').toUpperCase() + "] ";
+        var fullMsg = timeStamped + prefix + msg;
+        logArray.push(fullMsg);
+        if (addLog && typeof addLog === 'function') { addLog(fullMsg); }
+        else { Logger.log(fullMsg); }
+    }
+
+    // --- Configuration Validation ---
+    // (Keep existing validation logic - checks for airtable props, timestampField, sheetName, etc.)
+    const primaryTitleField = 'title';
+    if (!config || !config.airtable || !config.airtable.baseId || !config.airtable.tableId || !config.airtable.timestampField || !config.sheetName || !Array.isArray(config.airtable.fields)) { /* ... Error Handling ... */ return { success: false, error: "Config Error...", counters: counters, log: logArray.join("\n"), recentItems: recentItemsCollector }; }
+    if (!config.airtable.fields.includes(config.airtable.timestampField)) { /* ... Error Handling ... */ return { success: false, error: "Timestamp field missing...", counters: counters, log: logArray.join("\n"), recentItems: recentItemsCollector }; }
+    if (!config.airtable.fields.includes(primaryTitleField)) { logEntry(`WARN: Primary title field '${primaryTitleField}' not in config.airtable.fields.`); }
+    if (!config.airtable.viewName) { // ** Crucial Check for this logic **
+        logEntry("ERROR: This sync function requires a specific Airtable 'viewName' in the configuration to perform targeted deletions.");
+        return { success: false, error: "Configuration Error: Airtable 'viewName' is required.", counters: counters, log: logArray.join("\n"), recentItems: recentItemsCollector };
+    }
+
+    logEntry("INFO: Starting sync to sheet '" + config.sheetName + "' from Airtable View '" + config.airtable.viewName + "'.");
+    var airtableRecords = [];
+    var viewRecordIds = new Set(); // To store Record IDs from the Airtable View
+
+    // --- 1. Fetch Airtable Data from the Specific View ---
+    try {
+        logEntry("INFO: Fetching data from Airtable table: " + config.airtable.tableId + " (View: " + config.airtable.viewName + ")");
+        var apiUrl = 'https://api.airtable.com/v0/' + config.airtable.baseId + '/' + encodeURIComponent(config.airtable.tableId);
+        airtableRecords = fetchAirtableData_(apiUrl, config.airtable.fields, config.airtable.viewName);
+         // Populate the Set of IDs from the view
+         airtableRecords.forEach(record => { if(record.id) viewRecordIds.add(record.id); });
+         logEntry(`INFO: Fetched ${airtableRecords.length} records from Airtable view. Found ${viewRecordIds.size} unique Record IDs.`);
+    } catch (fetchErr) { /* ... Error Handling ... */ return { success: false, error: "Airtable Fetch Error: " + fetchErr.message, counters: counters, log: logArray.join("\n"), recentItems: recentItemsCollector }; }
+
+    // --- 2. Define Target Header and Process Fetched Data ---
+    // (Keep existing logic for defining targetHeader and processing airtableRecords into newData array)
+    // ... (Ensure this part creates the newData array with [targetHeader, [rowData1], [rowData2], ...]) ...
+    // --- [EXISTING CODE FOR THIS SECTION GOES HERE] ---
+    var newData = [];
+    var targetHeader = ["AirtableRecordID"];
+    var configuredFieldsSet = new Set(config.airtable.fields);
+    const orderedFields = config.airtable.fields.filter(f => configuredFieldsSet.has(f));
+    targetHeader = targetHeader.concat(orderedFields);
+    newData.push(targetHeader);
+    logEntry("INFO: Target header defined: " + targetHeader.join(', '));
+    const targetHeaderIndexMap = targetHeader.reduce((map, header, index) => { map[header] = index; return map; }, {});
+    const recordIdColIndex_Target = 0;
+    const timestampColIndex_Target = targetHeaderIndexMap[config.airtable.timestampField];
+    const titleColIndex_Target = targetHeaderIndexMap[primaryTitleField]; // Not used for recentItems anymore, but kept for standardization
+    airtableRecords.forEach(function (record) {
+        var fields = record.fields || {}; var airtableNativeId = record.id; if (!airtableNativeId) return;
+        var newRowArray = targetHeader.map(headerName => {
+            if (headerName === "AirtableRecordID") return airtableNativeId;
+            else return formatFieldValue_(fields[headerName]); });
+        newData.push(newRowArray); });
+    logEntry("INFO: Processed fetched Airtable data into " + (newData.length - 1) + " data rows.");
+    // --- [END OF EXISTING CODE FOR THIS SECTION] ---
+
+
+    // --- 3. Interact with Google Sheet ---
+    var ss = SpreadsheetApp.getActiveSpreadsheet();
+    var sheet = ss.getSheetByName(config.sheetName);
+    var sheetCreated = false;
+
+    // Handle Sheet Creation or Empty Sheet
+    if (!sheet) {
+        try {
+            sheet = ss.insertSheet(config.sheetName); sheetCreated = true; logEntry("INFO: Created new sheet: " + config.sheetName);
+            // Write data directly
+            if (newData.length > 0) {
+                sheet.getRange(1, 1, newData.length, newData[0].length).setValues(newData);
+                sheet.setFrozenRows(1);
+                counters.created = newData.length - 1;
+                logEntry(`INFO: Wrote ${counters.created} records to new sheet.`);
+            }
+            // ** Add summary message for new sheet **
+            if (recentItemsCollector && typeof recentItemsCollector.push === 'function') {
+                 recentItemsCollector.push(`${capitalizeFirstLetter(config.type)}: Created sheet '${config.sheetName}' with ${counters.created} records.`);
+            }
+            return { success: true, counters: counters, log: logArray.join("\n"), recentItems: recentItemsCollector };
+        } catch (e) { /* ... Error Handling ... */ return { success: false, error: "Sheet Creation/Write Error: " + e.message, counters: counters, log: logArray.join("\n"), recentItems: recentItemsCollector }; }
+    }
+
+    // Get existing data from sheet
+    var existingData = []; var existingHeader = []; var sheetIsEmpty = true;
+    var lastRow = sheet.getLastRow(); var lastCol = sheet.getLastColumn();
+
+    if (lastRow > 0 && lastCol > 0) {
+         try {
+            existingData = sheet.getDataRange().getValues();
+            existingHeader = existingData.length > 0 ? existingData[0].map(String) : [];
+            sheetIsEmpty = existingData.length <= 1; // Empty if only header or less
+            logEntry(`INFO: Fetched ${existingData.length} existing rows (incl. header: ${existingHeader.length > 0}) from sheet '${config.sheetName}'. Sheet is ${sheetIsEmpty ? 'effectively empty' : 'not empty'}.`);
+         } catch (e) { /* ... Error Handling ... */ return { success: false, error: "Sheet Read Error: " + e.message, counters: counters, log: logArray.join("\n"), recentItems: recentItemsCollector }; }
+    } else {
+         logEntry("INFO: Sheet '" + config.sheetName + "' exists but has no data (getLastRow/Col <= 0).");
+         sheetIsEmpty = true;
+         // Ensure we try to write the header later
+    }
+
+
+    // --- 4. Header Check and Full Rewrite (Only if headers mismatch drastically) ---
+    var newHeader = targetHeader.map(String); // Header from Airtable data structure
+    if (!sheetIsEmpty && JSON.stringify(existingHeader) !== JSON.stringify(newHeader)) {
+        logEntry("WARN: Headers differ significantly. Rewriting entire sheet '" + config.sheetName + "'. This might happen if columns were added/removed.");
+        logEntry("DEBUG Existing Header: " + (existingHeader.join(', ') || 'None'));
+        logEntry("DEBUG New Header:      " + newHeader.join(', '));
+        try {
+            sheet.clearContents(); sheet.setFrozenRows(0); SpreadsheetApp.flush();
+            // Resize sheet (optional but good practice)
+            // ... [Add resizing logic if needed, similar to previous full rewrite] ...
+            if (newData.length > 0) {
+                 sheet.getRange(1, 1, newData.length, newData[0].length).setValues(newData);
+                 sheet.setFrozenRows(1);
+                 counters.created = newData.length - 1;
+                 counters.deleted = existingData.length -1; // Conceptual count
+                 logEntry(`INFO: Sheet rewritten successfully with ${counters.created} records.`);
+            }
+             // ** Add summary message for rewrite **
+            if (recentItemsCollector && typeof recentItemsCollector.push === 'function') {
+                 recentItemsCollector.push(`${capitalizeFirstLetter(config.type)}: Rewrote sheet '${config.sheetName}' with ${counters.created} records (header change).`);
+            }
+        } catch (e) { /* ... Error Handling ... */ return { success: false, error: "Sheet Rewrite Error: " + e.message, counters: counters, log: logArray.join("\n"), recentItems: recentItemsCollector }; }
+        return { success: true, counters: counters, log: logArray.join("\n"), recentItems: recentItemsCollector }; // Exit after rewrite
+    } else if (sheetIsEmpty && newData.length > 0) {
+        // Handle case where sheet was empty but exists
+        logEntry("INFO: Sheet was empty. Writing new data including header.");
+         try {
+             // Ensure sheet dimensions are sufficient (minimal check)
+             if (sheet.getMaxColumns() < newHeader.length) sheet.insertColumnsAfter(sheet.getMaxColumns(), newHeader.length - sheet.getMaxColumns());
+              sheet.getRange(1, 1, newData.length, newData[0].length).setValues(newData);
+              sheet.setFrozenRows(1);
+              counters.created = newData.length - 1;
+              logEntry(`INFO: Wrote ${counters.created} records to empty sheet.`);
+               // ** Add summary message for populating empty sheet **
+                if (recentItemsCollector && typeof recentItemsCollector.push === 'function') {
+                     recentItemsCollector.push(`${capitalizeFirstLetter(config.type)}: Populated empty sheet '${config.sheetName}' with ${counters.created} records.`);
+                }
+         } catch (e) { /* ... Error Handling ... */ return { success: false, error: "Sheet Write Error (Empty): " + e.message, counters: counters, log: logArray.join("\n"), recentItems: recentItemsCollector }; }
+         return { success: true, counters: counters, log: logArray.join("\n"), recentItems: recentItemsCollector };
+    } else if (newData.length <= 1 && !sheetIsEmpty) {
+         // Handle case where Airtable view is now empty, but sheet has data
+         logEntry("WARN: Airtable view returned no data rows. Clearing sheet '" + config.sheetName + "' to match.");
+         try {
+              sheet.getDataRange().offset(1, 0).clearContents(); // Clear data rows, keep header
+              counters.deleted = existingData.length - 1;
+              logEntry(`INFO: Cleared ${counters.deleted} data rows from sheet.`);
+               // ** Add summary message for clearing sheet **
+               if (recentItemsCollector && typeof recentItemsCollector.push === 'function') {
+                    recentItemsCollector.push(`${capitalizeFirstLetter(config.type)}: Cleared sheet '${config.sheetName}' (${counters.deleted} rows removed) as Airtable view is empty.`);
+               }
+         } catch (e) { /* ... Error Handling ... */ return { success: false, error: "Sheet Clear Error: " + e.message, counters: counters, log: logArray.join("\n"), recentItems: recentItemsCollector }; }
+         return { success: true, counters: counters, log: logArray.join("\n"), recentItems: recentItemsCollector };
+    } else if (newData.length <= 1 && sheetIsEmpty){
+        logEntry("INFO: Airtable view and sheet are both empty. Nothing to do.");
+         // ** Add summary message for no data **
+         if (recentItemsCollector && typeof recentItemsCollector.push === 'function') {
+              recentItemsCollector.push(`${capitalizeFirstLetter(config.type)}: No data found in Airtable view or sheet.`);
+         }
+        return { success: true, counters: counters, log: logArray.join("\n"), recentItems: recentItemsCollector };
+    }
+
+
+    // --- 5. Incremental Sync Logic ---
+    logEntry("INFO: Performing incremental sync (Update/Append/Delete)...");
+    const sheetHeader = sheetIsEmpty ? newHeader : existingHeader; // Use new header if sheet was empty initially
+    const sheetRecordIdIndex = sheetHeader.indexOf("AirtableRecordID");
+    const sheetTimestampIndex = sheetHeader.indexOf(config.airtable.timestampField);
+
+    if (sheetRecordIdIndex === -1 || sheetTimestampIndex === -1) { /* ... Error Handling for missing columns ... */ return { success: false, error: "Internal Error: Column index mapping failed.", counters: counters, log: logArray.join("\n"), recentItems: recentItemsCollector }; }
+
+    // Build Map of Existing Sheet Records (ID -> {rowIndex, timestamp})
+    var existingSheetMap = {};
+    // *** ADDED CHECK: Only attempt partial read if there are actual data rows (lastRow > 1) ***
+    if (!sheetIsEmpty && lastRow > 1) {
+        logEntry("INFO: Attempting efficient read of ID/Timestamp columns...");
+        // Get 1-based column index numbers
+        const idCol = sheetRecordIdIndex + 1;
+        const tsCol = sheetTimestampIndex + 1;
+
+        try {
+            // Read column data starting from row 2 up to the last data row using R1C1 indexing internally
+            // Parameters: startRow, startCol, numRows, numCols
+            const idValues = sheet.getRange(2, idCol, lastRow - 1, 1).getValues();
+            const tsValues = sheet.getRange(2, tsCol, lastRow - 1, 1).getValues();
+
+            for (let i = 0; i < idValues.length; i++) {
+                const recID = idValues[i][0];
+                if (recID && String(recID).trim() !== '') {
+                    const tsValue = tsValues[i][0];
+                    const rowIndex = i + 2; // +1 for 0-based loop 'i', +1 because sheet data starts at row 2 here
+                    existingSheetMap[recID] = {
+                        rowIndex: rowIndex,
+                        timestamp: standardizeTimestampForComparison_(tsValue, recID, `sheet row ${rowIndex}`)
+                    };
+                }
+            }
+             logEntry("INFO: Built map of " + Object.keys(existingSheetMap).length + " existing records from sheet (ID/Timestamp only).");
+        } catch (readErr){
+            logEntry("WARN: Error reading partial sheet data: " + readErr + ". Falling back to full read (slower).");
+            // Fallback to reading full data if partial read fails
+             existingSheetMap = {}; // Reset map
+             // Use the existingData array if it was successfully read earlier
+             if (existingData && existingData.length > 1) {
+                 for (var i = 1; i < existingData.length; i++) { // Start i=1 to skip header in existingData array
+                     var row = existingData[i];
+                     // Ensure row has enough columns before accessing indices
+                     if (row.length > sheetRecordIdIndex && row.length > sheetTimestampIndex) {
+                        var recID = row[sheetRecordIdIndex];
+                        if (recID && String(recID).trim() !== '') {
+                            existingSheetMap[recID] = {
+                                rowIndex: i + 1, // 1-based index from the existingData array
+                                timestamp: standardizeTimestampForComparison_(row[sheetTimestampIndex], recID, `sheet row ${i+1}`)
+                            };
+                        }
+                     } else {
+                          logEntry(`WARN [Fallback]: Skipping row ${i+1} due to insufficient columns (${row.length}).`);
+                     }
+                 }
+                 logEntry("INFO: Built map of " + Object.keys(existingSheetMap).length + " existing records from sheet (Full Read Fallback).");
+             } else {
+                  logEntry("WARN [Fallback]: Cannot perform full read fallback as existingData is empty or missing.");
+             }
+        }
+    } else if (sheetIsEmpty || lastRow <= 1) {
+         logEntry("INFO: Sheet is empty or only contains a header. Skipping build of existing record map.");
+         // existingSheetMap remains empty {}
+    }
+
+
+    // --- Compare New Data (from View) and Prepare Batches ---
+    var rowsToUpdate = []; // { range: 'A1Notation', values: [[...]] }
+    var rowsToAppend = []; // [[...], [...]]
+    // Note: recordIdsToKeep was already populated when fetching from view (viewRecordIds)
+
+    for (var i = 1; i < newData.length; i++) { // Start i=1 to skip header in newData
+        var newRow = newData[i];
+        var newRecordID = newRow[recordIdColIndex_Target];
+        if (!newRecordID) continue; // Should have ID based on earlier logic
+
+        var standardizedNewTimestamp = standardizeTimestampForComparison_(newRow[timestampColIndex_Target], newRecordID, `new data row ${i+1}`);
+        var existingRecordInfo = existingSheetMap[newRecordID];
+
+        if (existingRecordInfo) {
+            // Exists in Sheet: Check timestamp
+            if (existingRecordInfo.timestamp !== standardizedNewTimestamp) {
+                var rangeNotation = sheet.getRange(existingRecordInfo.rowIndex, 1, 1, sheetHeader.length).getA1Notation();
+                rowsToUpdate.push({ range: rangeNotation, values: [newRow] }); // newRow is already in correct target order
+                counters.updated++;
+            } else {
+                counters.skipped++;
+            }
+        } else {
+            // Does not exist in Sheet: Append
+            rowsToAppend.push(newRow); // newRow is already in correct target order
+            counters.created++;
+        }
+    }
+
+    // --- Identify Rows to Delete (In Sheet Map, but NOT in View Data) ---
+    var rowsToDeleteIndices = [];
+    for (var sheetRecID in existingSheetMap) {
+        if (!viewRecordIds.has(sheetRecID)) { // Check against the Set of IDs from the Airtable view
+            rowsToDeleteIndices.push(existingSheetMap[sheetRecID].rowIndex);
+            counters.deleted++;
+        }
+    }
+    rowsToDeleteIndices.sort((a, b) => b - a); // Sort descending for deletion
+    logEntry("INFO: Sync Analysis complete. Update: " + counters.updated + ", Create: " + counters.created + ", Delete: " + counters.deleted + ", Skipped: " + counters.skipped);
+
+    // --- Perform Batch Operations ---
+    var updateError = null, appendError = null, deleteError = null;
+    var operationsPerformed = (rowsToUpdate.length + rowsToAppend.length + rowsToDeleteIndices.length) > 0;
+
+    // --- Batch Updates ---
+    if (rowsToUpdate.length > 0) {
+        logEntry("INFO: Applying " + rowsToUpdate.length + " updates...");
+        try { rowsToUpdate.forEach(update => sheet.getRange(update.range).setValues(update.values)); }
+        catch (e) { logEntry("ERROR applying updates: " + e); updateError = e; }
+    }
+
+    // --- Batch Appends ---
+    if (rowsToAppend.length > 0) {
+        logEntry("INFO: Appending " + rowsToAppend.length + " new rows...");
+        try {
+            var startAppendRow = sheet.getLastRow() + 1;
+            // Ensure sheet dimensions if needed (can be less critical for append)
+            sheet.getRange(startAppendRow, 1, rowsToAppend.length, sheetHeader.length).setValues(rowsToAppend);
+        } catch (e) { logEntry("ERROR applying appends: " + e); appendError = e; }
+    }
+
+    // --- Batch Deletes (Individually, but loop is batch) ---
+    if (rowsToDeleteIndices.length > 0) {
+        logEntry("INFO: Deleting " + rowsToDeleteIndices.length + " rows...");
+        try {
+            rowsToDeleteIndices.forEach(function(rowIndex) {
+                 if (rowIndex > 0 && rowIndex <= sheet.getMaxRows()) { // Check validity
+                     sheet.deleteRow(rowIndex);
+                 } else { logEntry("WARN: Skipped deletion of invalid row index " + rowIndex); }
+            });
+        } catch (e) { logEntry("ERROR deleting rows: " + e); deleteError = e; }
+    }
+
+    // --- Final Logging & Summary Message ---
+    var overallSuccess = !updateError && !appendError && !deleteError;
+    var summaryMessage = "";
+    const entityName = capitalizeFirstLetter(config.type);
+
+    if (overallSuccess) {
+        if (operationsPerformed) {
+            let parts = [];
+            if (counters.created > 0) parts.push(`${counters.created} created`);
+            if (counters.updated > 0) parts.push(`${counters.updated} updated`);
+            if (counters.deleted > 0) parts.push(`${counters.deleted} removed`); // Changed from 'deleted' for user clarity
+            summaryMessage = `${entityName}: Sync complete. ${parts.join(', ')}.`;
+            if (counters.skipped > 0) summaryMessage += ` (${counters.skipped} skipped)`;
+        } else if (counters.skipped > 0) {
+            summaryMessage = `${entityName}: Sync complete. No changes detected (${counters.skipped} checked).`;
+        } else {
+             summaryMessage = `${entityName}: Sync complete. No changes detected.`; // Should ideally not happen if fetched data had rows
+        }
+         logEntry("INFO: Sync completed successfully.");
+    } else {
+         let errorSummary = [updateError, appendError, deleteError].filter(Boolean).map(e => e.message).join('; ');
+         summaryMessage = `${entityName}: Sync failed. Error(s): ${errorSummary}`;
+         logEntry("ERROR: Sync completed with errors.");
+    }
+
+    // Add the single summary message to recent items
+    if (recentItemsCollector && typeof recentItemsCollector.push === 'function') {
+        recentItemsCollector.push(summaryMessage);
+    }
+
+    return {
+        success: overallSuccess,
+        error: overallSuccess ? null : summaryMessage, // Return summary message as error on failure
+        counters: counters,
+        log: logArray.join("\n"),
+        recentItems: recentItemsCollector
+    };
+}
+
 /********************************************************
  * Helper: Capitalize First Letter
- * Utility function for formatting log messages.
  ********************************************************/
 function capitalizeFirstLetter(string) {
   if (!string) return '';
@@ -401,288 +665,574 @@ function capitalizeFirstLetter(string) {
 }
 
 
-/*******************************************************************************
- * syncAirtableToSheet (CORE FUNCTION - Simplified - v1.3 Empty Sheet Fix)
- * Fetches data, processes using simple formatting, and performs incremental
- * sync to the target Google Sheet using native Airtable Record ID.
- * Correctly handles writing data to an empty sheet.
- * PRIORITIZES 'title' field for user-facing logs (recentItems).
- *******************************************************************************/
-function syncAirtableToSheet(config, addLog, recentItems) {
-    var counters = { updated: 0, skipped: 0, created: 0, deleted: 0 };
-    var logArray = [];
+// =======================================================
+//            WORDPRESS IMPORT & CACHE FUNCTIONS
+//               --- NEW SECTION FOR PHASE 2 ---
+// =======================================================
 
-    // --- Internal logging helper --- (No changes needed)
-    function logEntry(msg) {
-        var timeStamped = "[" + new Date().toLocaleTimeString() + "] ";
-        var prefix = "[" + (config.type || 'SYNC').toUpperCase() + "] ";
-        var fullMsg = timeStamped + prefix + msg;
-        logArray.push(fullMsg);
-        if (addLog && typeof addLog === 'function') {
-            addLog(fullMsg);
-        } else {
-            Logger.log(fullMsg);
-        }
+// =======================================================
+//            WORDPRESS IMPORT & CACHE FUNCTIONS
+//               --- NEW SECTION FOR PHASE 2 ---
+// =======================================================
+
+/********************************************************
+ * initiateWordPressImport
+ * Triggers the WP All Import 'trigger' action via URL.
+ * Does NOT call 'processing'. Waits for server cron to handle that.
+ * @param {string} importId - The WP All Import numerical ID.
+ * @return {object} Result object { success: boolean, status: string, message: string, log: string }
+ ********************************************************/
+function initiateWordPressImport(importId) {
+    var startTime = new Date();
+    var logCollector = [];
+    var triggerSuccess = false; // Tracks if trigger call to WP was successful
+    var overallStatus = 'error_start'; // Initial status
+    var overallMessage = 'Import trigger failed.';
+    // No runId needed here unless you want to track GAS trigger attempts specifically
+    // No local user cache management needed for pending status in this model
+
+    function logWP(msg) {
+        var timeStamped = "[" + startTime.toLocaleTimeString() + "] ";
+        logCollector.push(timeStamped + msg);
+        // Use specific prefix for easy filtering in logs
+        Logger.log("WP_TRIGGER [" + importId + "]: " + msg);
     }
 
-    // --- Configuration Validation --- (No changes needed)
-    const primaryTitleField = 'title'; // <-- Ensure this matches your title field name
-    if (!config || !config.airtable || !config.airtable.baseId || !config.airtable.tableId || !config.airtable.timestampField || !config.sheetName || !Array.isArray(config.airtable.fields)) { /* ... */ return { success: false, error: "Config error...", counters: counters, recentItems: recentItems || [], log: logArray.join("\n") }; }
-    if (!config.airtable.fields.includes(config.airtable.timestampField)) { /* ... */ return { success: false, error: "Timestamp field missing...", counters: counters, recentItems: recentItems || [], log: logArray.join("\n") }; }
-    if (!config.airtable.fields.includes(primaryTitleField)) { logEntry(`WARN: The primary title field '${primaryTitleField}' is not listed in config.airtable.fields...`); }
+    // --- Validate Input ---
+    if (!importId) {
+        logWP("ERROR: Import ID is missing.");
+        return {
+             success: false, status: 'error_missing_id',
+             message: 'Import ID was not provided.',
+             log: logCollector.join("\n")
+        };
+    }
+    importId = String(importId);
+    logWP("INFO: Initiating WordPress Import Trigger for ID: " + importId);
 
-    logEntry("INFO: Starting sync to sheet '" + config.sheetName + "'...");
-    var airtableRecords = [];
+    // --- Construct Trigger URL ---
+    // Uses global constants WP_IMPORT_BASE_URL, WP_IMPORT_KEY defined at the top
+    var baseUrl = WP_IMPORT_BASE_URL +
+                  '?import_key=' + encodeURIComponent(WP_IMPORT_KEY) +
+                  '&rand=' + Math.random(); // Keep rand for cache busting
+    var triggerUrl = baseUrl + '&import_id=' + encodeURIComponent(importId) + '&action=trigger';
+    // We DO NOT construct or call the processingUrl here
 
+    // --- Set Fetch Options ---
+    var options = {
+        method: 'get',
+        muteHttpExceptions: true,
+        headers: { 'User-Agent': 'GoogleAppsScript-SessionsSyncDashboard/1.3-TriggerOnly' }, // Updated User-Agent
+        deadline: WP_ACTION_TIMEOUT // Apply timeout (still important for trigger)
+    };
+
+    // --- Trigger the Import ---
+    logWP("INFO: Sending trigger request to WP...");
+    Logger.log("DEBUG: Trigger URL: " + triggerUrl);
+    let triggerResponse, triggerResponseCode, triggerResponseText;
     try {
-        // --- 1. Fetch Airtable Data --- (No changes needed)
-        logEntry("INFO: Fetching data from Airtable table: " + config.airtable.tableId);
-        var apiUrl = 'https://api.airtable.com/v0/' + config.airtable.baseId + '/' + encodeURIComponent(config.airtable.tableId);
-        airtableRecords = fetchAirtableData_(apiUrl, config.airtable.fields, config.airtable.viewName);
-    } catch (fetchErr) { /* ... Error handling ... */ return { success: false, error: "Fetch error...", counters: counters, recentItems: recentItems || [], log: logArray.join("\n") }; }
+        triggerResponse = UrlFetchApp.fetch(triggerUrl, options);
+        triggerResponseCode = triggerResponse.getResponseCode();
+        triggerResponseText = triggerResponse.getContentText() || '(No response body)';
+        logWP("INFO: WP Trigger Response Code: " + triggerResponseCode);
+        Logger.log("DEBUG: WP Trigger Response Body: " + triggerResponseText); // Log the actual response
 
-    // --- 2. Define Target Header and Process Data --- (No changes needed)
-    logEntry("INFO: Processing " + airtableRecords.length + " fetched records...");
-    var newData = [];
-    var targetHeader = ["AirtableRecordID"];
-    var configuredFieldsSet = new Set(config.airtable.fields);
-    const orderedFields = config.airtable.fields.filter(f => configuredFieldsSet.has(f));
-    targetHeader = targetHeader.concat(orderedFields); // Concatenate in the config order
-    newData.push(targetHeader);
-    logEntry("INFO: Target header defined with " + targetHeader.length + " columns: " + targetHeader.join(', '));
-    const targetHeaderIndexMap = targetHeader.reduce((map, header, index) => { map[header] = index; return map; }, {});
-    const recordIdColIndex_Target = 0;
-    const timestampColIndex_Target = targetHeaderIndexMap[config.airtable.timestampField];
-    const titleColIndex_Target = targetHeaderIndexMap[primaryTitleField];
-    if (timestampColIndex_Target === undefined) { /* ... Validation ... */ return { success: false, error: "Timestamp index error...", counters: counters, recentItems: recentItems || [], log: logArray.join("\n") }; }
-    if (titleColIndex_Target === undefined) { logEntry(`WARN: Cannot find index for primary title field '${primaryTitleField}' in target header...`); }
-    airtableRecords.forEach(function (record, index) { /* ... Processing loop ... */ var fields = record.fields || {}; var airtableNativeId = record.id; if (!airtableNativeId) { return; } var newRowArray = targetHeader.map(headerName => { if (headerName === "AirtableRecordID") return airtableNativeId; else return formatFieldValue_(fields[headerName]); }); newData.push(newRowArray); });
-    logEntry("INFO: Finished processing. New data structure has " + (newData.length - 1) + " data rows.");
+        if (triggerResponseCode === 200) {
+            var triggerResponseJson = {};
+            var wpMessage = triggerResponseText; // Default to full text
+            try {
+                 triggerResponseJson = JSON.parse(triggerResponseText);
+                 // Prefer the JSON message if it exists, otherwise use the raw text
+                 wpMessage = (triggerResponseJson && triggerResponseJson.message) ? triggerResponseJson.message : triggerResponseText;
+            } catch (e) { /* Ignore parse error, use raw text */ }
 
-    // --- 3. Sync with Google Sheet ---
-    if (newData.length <= 1) { /* ... No data check ... */ return { success: true, counters: counters, recentItems: recentItems || [], log: logArray.join("\n") }; }
-
-    // Get sheet handle, create if needed
-    var ss = SpreadsheetApp.getActiveSpreadsheet();
-    var sheet = ss.getSheetByName(config.sheetName);
-    var sheetCreated = false;
-    if (!sheet) { try { sheet = ss.insertSheet(config.sheetName); sheetCreated = true; logEntry("INFO: Created new sheet: " + config.sheetName); } catch (e) { /*...*/ return { success: false, error: "Sheet creation error...", counters: counters, recentItems: recentItems || [], log: logArray.join("\n") }; } }
-
-    // Read existing data
-    var existingData = [];
-    var existingHeader = [];
-    if (!sheetCreated && sheet.getLastRow() > 0) {
-        try {
-            existingData = sheet.getDataRange().getValues();
-            existingHeader = existingData[0].map(String); // Get header only if data exists
-            logEntry("INFO: Fetched " + existingData.length + " existing rows (incl. header) from sheet '" + config.sheetName + "'.");
-        } catch (e) { /*...*/ return { success: false, error: "Sheet read error...", counters: counters, recentItems: recentItems || [], log: logArray.join("\n") }; }
-    } else if (!sheetCreated) {
-        logEntry("INFO: Sheet '" + config.sheetName + "' exists but is empty.");
-    }
-
-    // --- Determine Sync Strategy: Full Write or Incremental ---
-    var performFullWrite = false;
-    if (sheetCreated || existingData.length === 0) {
-        performFullWrite = true;
-        logEntry("INFO: Sheet is new or empty. Performing full data write.");
-    } else {
-        // Compare headers if sheet wasn't empty
-        var newHeader = targetHeader.map(String);
-        if (JSON.stringify(existingHeader) !== JSON.stringify(newHeader)) {
-            performFullWrite = true;
-            logEntry("WARN: Headers differ. Performing full data rewrite.");
-            logEntry("DEBUG Existing Header: " + existingHeader.join(', '));
-            logEntry("DEBUG New Header:      " + newHeader.join(', '));
-            counters.deleted = existingData.length - 1; // Log conceptual deletion
-        } else {
-            logEntry("INFO: Headers match. Performing incremental sync...");
-        }
-    }
-
-    // --- Execute Full Write (if needed) ---
-    if (performFullWrite) {
-        try {
-            // Clear existing content and resize before writing
-            sheet.clearContents();
-            sheet.setFrozenRows(0); // Unfreeze before resizing
-            SpreadsheetApp.flush(); // Try to ensure clear completes
-
-            const requiredRows = newData.length;
-            const requiredCols = targetHeader.length;
-
-            // Adjust rows
-            const currentMaxRows = sheet.getMaxRows();
-            if (currentMaxRows < requiredRows) {
-                sheet.insertRowsAfter(currentMaxRows, requiredRows - currentMaxRows);
-            } else if (currentMaxRows > requiredRows && requiredRows > 0) {
-                 // Check if requiredRows > 0 before deleting
-                 // Avoid error if newData only has header row (requiredRows = 1)
-                 if (currentMaxRows > 1 || requiredRows == 0) { // Ensure we don't delete the only row if requiredRows is 1 or 0
-                     sheet.deleteRows(requiredRows + 1, currentMaxRows - requiredRows);
-                 } else if (requiredRows === 1 && currentMaxRows > 1){
-                     // If new data has only header, delete all rows after 1
-                      sheet.deleteRows(2, currentMaxRows - 1);
-                 }
-            } else if (requiredRows == 0 && currentMaxRows > 0){
-                 // If new data is empty, clear everything
-                  sheet.deleteRows(1, currentMaxRows);
-            }
-
-
-            // Adjust columns
-            const currentMaxCols = sheet.getMaxColumns();
-            if (currentMaxCols < requiredCols) {
-                sheet.insertColumnsAfter(currentMaxCols, requiredCols - currentMaxCols);
-            } else if (currentMaxCols > requiredCols && requiredCols > 0) {
-                sheet.deleteColumns(requiredCols + 1, currentMaxCols - requiredCols);
-            } else if (requiredCols == 0 && currentMaxCols > 0){
-                 sheet.deleteColumns(1, currentMaxCols);
-            }
-
-
-            // Write new data (only if there's data to write)
-            if (requiredRows > 0 && requiredCols > 0) {
-                sheet.getRange(1, 1, requiredRows, requiredCols).setValues(newData);
-                sheet.setFrozenRows(1); // Re-freeze header
+            // Check if WP confirmed trigger OR said it was already triggered/running
+            // Look for positive confirmation keywords or "already" keywords.
+            const msgLower = wpMessage.toLowerCase();
+            if ( (triggerResponseJson && triggerResponseJson.status === 200) || // Check explicit JSON status first
+                 msgLower.includes("triggered") ||
+                 msgLower.includes("import started") ||
+                 msgLower.includes("already triggered") ||
+                 msgLower.includes("already running") )
+            {
+                triggerSuccess = true;
+                // Determine if it was newly triggered or already running
+                if (msgLower.includes("already")) {
+                    overallStatus = 'already_active'; // Indicate it was already running
+                    overallMessage = 'Trigger successful: Import was already running/triggered.';
+                    logWP("INFO: Trigger successful (HTTP 200). WP indicates import already active: " + wpMessage);
+                } else {
+                    overallStatus = 'triggered_waiting'; // Indicate newly triggered, waiting for cron processing
+                    overallMessage = 'Trigger successful: Import initiated, waiting for server processing.';
+                    logWP("INFO: Trigger successful (HTTP 200). WP confirmation: " + wpMessage);
+                }
+                 // Regardless of new/already active, the dashboard should start polling
             } else {
-                 logEntry("INFO: No data to write after clearing/resizing.");
+                 // HTTP 200, but unexpected message from WP
+                 triggerSuccess = false;
+                 overallStatus = 'trigger_wp_error';
+                 overallMessage = 'Trigger command sent, but WP reported an issue or unexpected response: ' + wpMessage.substring(0, 200); // Limit message length
+                 logWP("WARN: Trigger HTTP 200, but unexpected WP response: " + overallMessage);
             }
-
-            counters.created = newData.length - 1; // All non-header rows are new
-            const writeAction = (sheetCreated || existingData.length === 0) ? "written to new/empty sheet" : "rewritten sheet";
-            logEntry(`INFO: Data ${writeAction} successfully. ${counters.created} records created.`);
-            if (recentItems && typeof recentItems.push === 'function') recentItems.push(`${sheetCreated ? "Created" : (existingData.length === 0 ? "Populated empty" : "Rewrote")} sheet '${config.sheetName}' with ${counters.created} records.`);
-
-        } catch (e) {
-            logEntry(`ERROR ${performFullWrite && !sheetCreated && existingData.length > 0 ? 'rewriting sheet' : 'writing to new/empty sheet'} '${config.sheetName}': ${e.message}${e.stack ? " | Stack: " + e.stack : ""}`);
-            if (recentItems && typeof recentItems.push === 'function') recentItems.push(`Sync Error (${config.type}): Failed ${performFullWrite ? 'rewriting' : 'writing'} sheet.`);
-            return { success: false, error: `Failed ${performFullWrite ? 'rewriting' : 'writing'} data to '${config.sheetName}': ${e.message}`, counters: counters, recentItems: recentItems || [], log: logArray.join("\n") };
+        } else {
+            // HTTP error (4xx, 5xx)
+            triggerSuccess = false;
+            overallStatus = 'trigger_http_error';
+            overallMessage = 'WP trigger failed (HTTP Status: ' + triggerResponseCode + '). Response: ' + triggerResponseText.substring(0, 200);
+            logWP("ERROR: " + overallMessage);
         }
-        // If full write was successful, return
-        return { success: true, counters: counters, recentItems: recentItems || [], log: logArray.join("\n") };
+    } catch (triggerErr) {
+         triggerSuccess = false; // Assume failure unless it's a timeout
+         if (triggerErr.message.includes("Timeout") || triggerErr.message.includes("timed out")) {
+             overallStatus = 'trigger_timeout_error';
+             overallMessage = 'Request to trigger import timed out after ' + WP_ACTION_TIMEOUT + 's. Status uncertain, but start monitoring.';
+             logWP("WARN: Trigger call timed out. Assuming trigger might have worked. " + triggerErr.message);
+             // Treat timeout cautiously - it *might* have triggered. Allow polling.
+             triggerSuccess = true; // Let dashboard poll even on timeout
+         } else {
+            overallStatus = 'trigger_fetch_error';
+            overallMessage = 'Error making trigger request: ' + triggerErr.message;
+            logWP("EXCEPTION during trigger call: " + overallMessage);
+         }
     }
 
-    // --- Execute Incremental Update (only if not a full write) ---
-    const sheetRecordIdIndex = 0;
-    const sheetTimestampIndex = existingHeader.indexOf(config.airtable.timestampField);
-    const sheetTitleIndex = existingHeader.indexOf(primaryTitleField);
-    if (sheetTimestampIndex === -1) { /* ... Validation ... */ return { success: false, error: "Timestamp index error in sheet...", counters: counters, recentItems: recentItems || [], log: logArray.join("\n") }; }
-    if (sheetTitleIndex === -1) { logEntry(`WARN: Cannot find index for primary title field '${primaryTitleField}' in sheet header...`); }
+    // --- Prepare Result ---
+    var finalElapsedTime = ((new Date().getTime() - startTime.getTime()) / 1000).toFixed(1);
+    logWP("INFO: Trigger Function Finished. Elapsed: " + finalElapsedTime + "s. Status: " + overallStatus);
 
-    // Build Map of Existing Records
-    var existingMap = {};
-    for (var i = 1; i < existingData.length; i++) { var existingRow = existingData[i]; if (existingRow.length <= sheetRecordIdIndex || existingRow.length <= sheetTimestampIndex) continue; var recID = existingRow[sheetRecordIdIndex]; if (recID && String(recID).trim() !== '') { var standardizedExistingTimestamp = standardizeTimestampForComparison_(existingRow[sheetTimestampIndex], recID, `sheet row ${i+1}`); existingMap[recID] = { rowIndex: i + 1, timestamp: standardizedExistingTimestamp }; } }
-    logEntry("INFO: Built map of " + Object.keys(existingMap).length + " existing records from sheet for comparison.");
-
-    // Compare New Data and Prepare Batches
-    var rowsToUpdate = []; var rowsToAppend = []; var recordIdsToKeep = new Set();
-    const entityTypeCapitalized = capitalizeFirstLetter(config.type);
-    for (var i = 1; i < newData.length; i++) { /* ... Comparison loop - Uses titleColIndex_Target for logging ... */ var newRow = newData[i]; var newRecordID = newRow[recordIdColIndex_Target]; if (!newRecordID || String(newRecordID).trim() === '') continue; recordIdsToKeep.add(newRecordID); var standardizedNewTimestamp = standardizeTimestampForComparison_(newRow[timestampColIndex_Target], newRecordID, `new data row ${i}`); var recordTitleForLog = (titleColIndex_Target !== undefined && newRow.length > titleColIndex_Target && newRow[titleColIndex_Target]) ? newRow[titleColIndex_Target] : newRecordID; var existingRecord = existingMap[newRecordID]; if (existingRecord) { if (existingRecord.timestamp !== standardizedNewTimestamp) { var rangeNotation = sheet.getRange(existingRecord.rowIndex, 1, 1, targetHeader.length).getA1Notation(); rowsToUpdate.push({ range: rangeNotation, values: [newRow] }); counters.updated++; if (recentItems && recentItems.length < 150) recentItems.push(`Updated ${entityTypeCapitalized}: '${recordTitleForLog}'`); logEntry(`INFO: Marked row ${existingRecord.rowIndex} (${newRecordID} - ${recordTitleForLog}) for update...`); } else { counters.skipped++; } } else { rowsToAppend.push(newRow); counters.created++; if (recentItems && recentItems.length < 150) recentItems.push(`Added ${entityTypeCapitalized}: '${recordTitleForLog}'`); logEntry(`INFO: Marked record ${newRecordID} (${recordTitleForLog}) for creation.`); } }
-
-    // Determine Rows to Delete
-    var rowsToDeleteIndices = [];
-    for (var recID in existingMap) { /* ... Delete logic - Uses sheetTitleIndex for logging ... */ if (!recordIdsToKeep.has(recID)) { let existingInfo = existingMap[recID]; rowsToDeleteIndices.push(existingInfo.rowIndex); counters.deleted++; var deletedTitle = recID; try { if (existingInfo.rowIndex > 0 && existingInfo.rowIndex <= sheet.getLastRow() && sheetTitleIndex !== -1 && (sheetTitleIndex < sheet.getLastColumn())) { var titleValue = sheet.getRange(existingInfo.rowIndex, sheetTitleIndex + 1).getValue(); if (titleValue && String(titleValue).trim() !== '') deletedTitle = String(titleValue).trim(); } } catch(fetchErr) { /* log warning */ } if (recentItems && recentItems.length < 150) recentItems.push(`Removed ${entityTypeCapitalized}: '${deletedTitle}'`); logEntry(`INFO: Marked row ${existingInfo.rowIndex} (${recID} - ${deletedTitle}) for deletion...`); } }
-    rowsToDeleteIndices.sort((a, b) => b - a);
-    logEntry("INFO: Sync Analysis complete. Update: " + counters.updated + ", Create: " + counters.created + ", Delete: " + counters.deleted + ", Skipped: " + counters.skipped);
-
-    // Perform Batch Operations
-    var updateError = null, appendError = null, deleteError = null;
-    var operationsPerformed = false;
-    /* ... Batch update logic ... */ if (rowsToUpdate.length > 0) { operationsPerformed = true; try { rowsToUpdate.forEach(update => { sheet.getRange(update.range).setValues(update.values); }); logEntry("INFO: " + rowsToUpdate.length + " updates applied."); } catch (e) { logEntry("ERROR updates: " + e.message); updateError = e; if (recentItems) recentItems.push("Sync Error (Updates)"); } }
-    /* ... Batch append logic ... */ if (rowsToAppend.length > 0) { operationsPerformed = true; try { var startRow = sheet.getLastRow() + 1; let requiredEndRow = startRow + rowsToAppend.length - 1; if(sheet.getMaxRows() < requiredEndRow ) sheet.insertRowsAfter(sheet.getMaxRows(), requiredEndRow - sheet.getMaxRows()); if (sheet.getMaxColumns() < targetHeader.length) sheet.insertColumnsAfter(sheet.getMaxColumns(), targetHeader.length - sheet.getMaxColumns()); sheet.getRange(startRow, 1, rowsToAppend.length, targetHeader.length).setValues(rowsToAppend); logEntry("INFO: " + rowsToAppend.length + " appends applied."); } catch (e) { logEntry("ERROR appends: " + e.message); appendError = e; if (recentItems) recentItems.push("Sync Error (Appends)"); } }
-    /* ... Batch delete logic ... */ if (rowsToDeleteIndices.length > 0) { operationsPerformed = true; try { rowsToDeleteIndices.forEach(function(rowIndex) { if (rowIndex > 0 && rowIndex <= sheet.getLastRow()) { sheet.deleteRow(rowIndex); } else { logEntry("WARN: Skipped deletion index " + rowIndex); } }); logEntry("INFO: " + rowsToDeleteIndices.length + " deletes applied."); } catch (e) { logEntry("ERROR deletes: " + e.message); deleteError = e; if (recentItems) recentItems.push("Sync Error (Deletes)"); } }
-
-    // Final Logging & Return
-    if (counters.skipped > 0) logEntry("INFO: Skipped " + counters.skipped + " records (timestamp matched).");
-    if (!operationsPerformed && counters.skipped > 0) { logEntry("INFO: No changes needed for sheet '" + config.sheetName + "'."); if (recentItems && recentItems.length < 150) recentItems.push(config.type + ": No changes detected (" + counters.skipped + " checked)."); }
-    if (recentItems && recentItems.length >= 150 && !recentItems.some(item => item.startsWith("..."))) recentItems.push("... (Action summary list truncated)");
-    logEntry("INFO: Sync completed. Final Counts: " + JSON.stringify(counters));
-    var overallSuccess = !updateError && !appendError && !deleteError;
-    var errorMessages = [updateError, appendError, deleteError].filter(Boolean).map(e => config.type + ": " + e.message);
-    var combinedErrorMessage = errorMessages.join('; ');
-
-    return { success: overallSuccess, error: overallSuccess ? null : combinedErrorMessage, counters: counters, recentItems: recentItems, log: logArray.join("\n") };
+    // Return success: true if the trigger was likely sent okay OR timed out (implies maybe okay)
+    // The 'status' tells the UI how to proceed (poll or show error)
+    return {
+        success: triggerSuccess, // True if polling should start
+        status: overallStatus,
+        message: overallMessage,
+        log: logCollector.join("\n")
+    };
 }
 
 /********************************************************
- * Web App Interface & Dashboard Functions (Keep for Phase 2)
- * These functions provide the backend for a web-based UI.
+ * getImportStatus - Reads status EXCLUSIVELY via the ImportHandlerLib Library.
+ *                   Calls the central handler script to get status from its cache.
+ *                   Does NOT read from the Google Sheet anymore.
+ * @param {string} importId - The WP All Import numerical ID.
+ * @return {object|null} Parsed status object from the Handler's cache
+ *                       (e.g., {status:'complete', importId:'31', created: 4, ...})
+ *                       or null if not found/expired/invalid,
+ *                       or an error object {status:'error_library_*', ...} on library call failure.
  ********************************************************/
+function getImportStatus(importId) {
+    const logPrefix = "DASHBOARD [getImportStatus]: ";
 
-/**
- * Serves the HTML for the Web App (Phase 2).
- * Needs a file named 'dashboard.html' in the project.
- * @param {Object} e The event parameter for a web app doGet request.
- * @return {HtmlOutput} The HTML service object.
- */
+    if (!importId) {
+        Logger.log(logPrefix + "Called without importId.");
+        // Return an object indicating the error, consistent with other error returns
+        return { status: 'error_local', message: 'Import ID missing in dashboard call.', importId: null };
+    }
+    importId = String(importId); // Ensure it's a string
+
+    Logger.log(logPrefix + "Requesting status for Import ID '" + importId + "' directly from ImportHandlerLib (Cache ONLY).");
+
+    try {
+        // --- Call the Library Function ---
+        // This executes the getImportStatusFromCache function within the Handler script's context
+        var statusDataFromLib = ImportHandlerLib.getImportStatusFromCache(importId);
+        // --- End Library Call ---
+
+        if (statusDataFromLib) {
+            // The library function returns the parsed object on success or specific errors
+            Logger.log(logPrefix + "Received status object from Library for ID '" + importId + "'. Status: " + (statusDataFromLib.status || 'N/A'));
+            // Add timestamp for freshness check if needed by UI later (optional)
+            statusDataFromLib.libraryCheckTime = new Date().toISOString();
+            return statusDataFromLib; // Return the valid status object received from the library
+
+        } else {
+            // Library returned null (means not found, expired, or parse error within the library)
+            Logger.log(logPrefix + "Library returned null for Import ID '" + importId + "' (Not found, expired, or invalid data in Handler cache).");
+            // Return a consistent 'unknown' status object for the UI
+            return { status: 'unknown', message: 'No status found in Handler cache.', importId: importId, libraryCheckTime: new Date().toISOString() };
+        }
+
+    } catch (e) {
+        // --- Handle errors during the library call itself ---
+        Logger.log(logPrefix + "ERROR calling ImportHandlerLib.getImportStatusFromCache for ID '" + importId + "': " + e);
+        let errorStatus = 'error_library_call';
+        let errorMessage = "Error calling status library: " + e.message;
+        if (e.message.includes("ImportHandlerLib is not defined")) {
+             errorStatus = 'error_library_setup';
+             errorMessage = "Library configuration error: " + e.message;
+             Logger.log(logPrefix + "This likely means the Library Identifier is incorrect or the library wasn't added properly.");
+        } else if (e.message.includes("You do not have permission")) {
+             errorStatus = 'error_library_permission';
+             errorMessage = "Library permission error: " + e.message;
+             Logger.log(logPrefix + "This likely means the Handler library needs re-authorization or permissions changed.");
+        }
+        // Return a structured error object
+         return { status: errorStatus, message: errorMessage, importId: importId, libraryCheckTime: new Date().toISOString() };
+    }
+}
+
+
+/********************************************************
+ * cancelWordPressImport - Attempts to signal WP to cancel an import
+ * @param {string} importId - The WP All Import numerical ID.
+ * @return {object} Result object { success: boolean, status: string, message: string, log: string }
+ ********************************************************/
+function cancelWordPressImport(importId) {
+    var startTime = new Date();
+    var logCollector = [];
+    var success = false;
+    var message = "Cancellation request failed.";
+    var status = "error";
+
+    function logCancel(msg) {
+        var timeStamped = "[" + startTime.toLocaleTimeString() + "] ";
+        logCollector.push(timeStamped + msg);
+        Logger.log("WP_CANCEL [" + importId + "]: " + msg);
+    }
+
+    // --- Validate Input ---
+    if (!importId) {
+        logCancel("ERROR: Import ID missing.");
+        return { success: false, status: 'error_missing_id', message: 'Import ID required.', log: logCollector.join("\n") };
+    }
+    importId = String(importId);
+    var cacheKey = 'import_status_' + importId;
+
+    logCancel("INFO: Received request to cancel Import ID: " + importId);
+
+    // --- Construct URL ---
+    var cancelUrl = WP_IMPORT_BASE_URL +
+                '?import_key=' + encodeURIComponent(WP_IMPORT_KEY) +
+                '&import_id=' + encodeURIComponent(importId) +
+                '&action=cancel' + // WP All Import standard action
+                '&rand=' + Math.random();
+
+    logCancel("INFO: Calling WP cancellation endpoint...");
+    Logger.log("DEBUG: Cancel URL: " + cancelUrl);
+
+    // --- Set Fetch Options ---
+    var options = {
+        method: 'get', muteHttpExceptions: true,
+        headers: { 'User-Agent': 'GoogleAppsScript-SessionsSyncDashboard/1.2-Cancel' },
+        deadline: WP_ACTION_TIMEOUT
+    };
+
+    // --- Make Request ---
+    try {
+        var response = UrlFetchApp.fetch(cancelUrl, options);
+        var responseCode = response.getResponseCode();
+        var responseText = response.getContentText() || '(No response body)';
+        logCancel("INFO: WP Cancel Response Code: " + responseCode);
+        Logger.log("DEBUG: WP Cancel Response Body: " + responseText);
+
+        // WP All Import 'cancel' might just return simple text confirmation on success
+        if (responseCode === 200 && (responseText.toLowerCase().includes("cancelled") || responseText.toLowerCase().includes("stopped"))) {
+            success = true; status = "success";
+            message = "Cancellation request sent. Import should stop.";
+            logCancel("✅ SUCCESS: WP acknowledged cancellation request.");
+
+            // --- Remove pending status from cache ---
+            try {
+                var currentStatus = cache.get(cacheKey);
+                if (currentStatus) {
+                   var currentData = JSON.parse(currentStatus);
+                   // Update status to cancelled in cache before removing? Optional.
+                   // currentData.status = 'cancelled';
+                   // currentData.message = 'Cancelled via dashboard.';
+                   // cache.put(cacheKey, JSON.stringify(currentData), 600); // Store cancelled state briefly
+                   cache.remove(cacheKey); // Remove the key
+                   logCancel("INFO: Removed status from cache for cancelled Import ID " + importId);
+                }
+            } catch (cacheErr) {
+                logCancel("WARN: Failed removing status from cache after cancellation: " + cacheErr.message);
+                message += " (Cache cleanup issue)";
+            }
+        } else if (responseCode === 200) {
+             success = false; status = "wp_error";
+             message = "WP response indicates cancellation not needed/failed. Msg: " + (responseText.length < 200 ? responseText : "(See logs)");
+             logCancel("WARN: WP indicated cancellation issue: " + message);
+        } else {
+            success = false; status = "http_error";
+            message = "WP cancellation endpoint failed (HTTP Status: " + responseCode + ")";
+            logCancel("❌ ERROR: " + message);
+        }
+    } catch (fetchErr) {
+        success = false;
+         if (fetchErr.message.includes("Timeout") || fetchErr.message.includes("timed out")) {
+            status = "timeout_error";
+            message = "Request to cancel import timed out. Status uncertain.";
+             logCancel("⚠️ WARN: Cancel request timed out.");
+         } else {
+            status = "fetch_error";
+            message = "Error sending cancellation request: " + fetchErr.message;
+            logCancel("❌ EXCEPTION during cancel call: " + message);
+         }
+    }
+
+    // --- Prepare Result ---
+    var finalElapsedTime = ((new Date().getTime() - startTime.getTime()) / 1000).toFixed(1);
+    logCancel("INFO: Cancel Import Finished. Elapsed: " + finalElapsedTime + "s. Status: " + status);
+
+    return { success: success, status: status, message: message, log: logCollector.join("\n") };
+}
+
+// =======================================================
+//                WEB APP & DASHBOARD FUNCTIONS
+//            (Including doPost for WP Callbacks)
+// =======================================================
+
+
+
+/********************************************************
+ * clearBreezeCache - Calls the WP plugin to clear Breeze cache
+ * @return {object} Result object { success: boolean, status: string, message: string, log: string }
+ ********************************************************/
+function clearBreezeCache() {
+    var startTime = new Date();
+    var logCollector = [];
+    var success = false;
+    var message = "Cache clear failed.";
+    var status = "error";
+
+    function logCache(msg) {
+        var timeStamped = "[" + startTime.toLocaleTimeString() + "] ";
+        logCollector.push(timeStamped + msg);
+        Logger.log("CACHE_CLEAR: " + msg);
+    }
+
+    logCache("INFO: Received request to clear Breeze cache.");
+
+    // --- Construct URL ---
+    var clearCacheUrl = WP_IMPORT_BASE_URL +
+                        '?import_key=' + encodeURIComponent(WP_IMPORT_KEY) +
+                        '&action=clear_breeze_cache' + // Ensure this matches PHP plugin
+                        '&rand=' + Math.random();
+
+    logCache("INFO: Calling WordPress cache clear endpoint...");
+    Logger.log("DEBUG: Cache Clear URL: " + clearCacheUrl);
+
+    // --- Set Fetch Options ---
+    var options = {
+        method: 'get',
+        muteHttpExceptions: true,
+        headers: { 'User-Agent': 'GoogleAppsScript-SessionsSyncDashboard/1.2-CacheClear' },
+        deadline: WP_ACTION_TIMEOUT // Set a specific timeout
+    };
+
+    // --- Make Request ---
+    try {
+        var response = UrlFetchApp.fetch(clearCacheUrl, options);
+        var responseCode = response.getResponseCode();
+        var responseText = response.getContentText() || '(No response body)';
+        var responseJson = null;
+
+        logCache("INFO: WP Cache Clear Response Code: " + responseCode);
+        Logger.log("DEBUG: WP Cache Clear Response Body: " + responseText);
+
+        try {
+            responseJson = JSON.parse(responseText);
+        } catch (parseErr) {
+             logCache("WARN: Could not parse JSON response from WP cache clear: " + parseErr.message + ". Response Text: " + responseText.substring(0, 200));
+        }
+
+        // Check response based on expected JSON structure from PHP plugin helpers
+        if (responseCode === 200 && responseJson && responseJson.success === true) {
+            success = true;
+            status = "success";
+            message = (responseJson.data && responseJson.data.message) ? responseJson.data.message : "Cache cleared successfully (No details from WP).";
+            logCache("✅ SUCCESS: WordPress confirmed cache clear.");
+        } else if (responseCode === 200 && responseJson && responseJson.success === false) {
+            success = false;
+            status = "wp_error";
+            message = (responseJson.data && responseJson.data.message) ? responseJson.data.message : "WordPress reported an error during cache clear.";
+             logCache("❌ ERROR: WordPress reported failure: " + message);
+             if (responseJson.data && responseJson.data.output) { logCache("DEBUG: WP Error Output: " + responseJson.data.output); }
+        } else if (responseCode >= 400) {
+            success = false;
+            status = "http_error";
+            message = "WordPress cache clear endpoint failed (HTTP Status: " + responseCode + ")";
+            if (responseText.length < 300 && responseText.trim() !== '') { message += ". Response: " + responseText.trim(); }
+            logCache("❌ ERROR: " + message);
+        } else {
+             success = false;
+             status = "unexpected_response";
+             message = "Received unexpected response from WP cache clear. Code: " + responseCode + ". Body: " + responseText.substring(0, 200);
+             logCache("❌ ERROR: " + message);
+        }
+
+    } catch (fetchErr) {
+        if (fetchErr.message.includes("Timeout") || fetchErr.message.includes("timed out")) {
+            status = "timeout_error";
+            message = "Request to clear cache timed out after " + WP_ACTION_TIMEOUT + " seconds. Status uncertain.";
+             logCache("⚠️ WARN: Cache clear request timed out.");
+         } else {
+            status = "fetch_error";
+            message = "Error contacting WP cache clear endpoint: " + fetchErr.message;
+            logCache("❌ EXCEPTION during cache clear call: " + message);
+         }
+         success = false; // Ensure success is false on any fetch error
+    }
+
+    // --- Prepare and Return Result ---
+    var finalElapsedTime = ((new Date().getTime() - startTime.getTime()) / 1000).toFixed(1);
+    logCache("INFO: Cache Clear Function Finished in " + finalElapsedTime + "s. Final Status: " + status);
+
+    return {
+        success: success,
+        status: status,
+        message: message,
+        log: logCollector.join("\n")
+    };
+}
+
+
+// =======================================================
+//              TOP LEVEL & DASHBOARD WRAPPERS
+// =======================================================
+
+/********************************************************
+ * Top-Level Function (Runs sheet sync only) - Kept Simple
+ * This function is primarily for scheduled triggers or manual runs of *just* the sheet sync.
+ * The dashboard uses runFullSync_Dashboard.
+ ********************************************************/
+function runFullSync() {
+  Logger.log("--- Starting Full Airtable to Sheets Sync (runFullSync) ---");
+  var overallStatus = true;
+  var masterLog = ["Sync Run Started: " + new Date().toLocaleString()];
+  var recentItemsCollector = []; // Collects summary actions
+
+  function addLog(msg) {
+    masterLog.push(msg);
+    Logger.log(msg);
+  }
+
+  // Only sync sessions sheet in this basic runner
+  var config = CONFIG.sessions;
+  if (config) {
+      var syncFunctionName = config.syncFunctionName || 'syncAirtableToSheet';
+      addLog("\n--- Processing: " + config.type.toUpperCase() + " (Sheet: " + config.sheetName + ") ---");
+      try {
+        var result = this[syncFunctionName](config, addLog, recentItemsCollector); // `this` refers to global scope
+        addLog("Result for " + config.type.toUpperCase() + ": " + (result.success ? "SUCCESS" : "FAILED"));
+        if (!result.success) {
+          addLog("ERROR: " + result.error);
+          overallStatus = false;
+        }
+        addLog("Counters: " + JSON.stringify(result.counters));
+      } catch (e) {
+        addLog("FATAL ERROR during " + config.type + " sync: " + e.message + (e.stack ? "\nStack: " + e.stack : ""));
+        overallStatus = false;
+      }
+  } else {
+      addLog("ERROR: Configuration for 'sessions' not found.");
+      overallStatus = false;
+  }
+
+  Logger.log("\n--- Recent Actions Summary (" + recentItemsCollector.length + " items) ---");
+  recentItemsCollector.forEach(item => Logger.log("- " + item));
+
+  Logger.log("--- Full Sync Run Complete (runFullSync) ---");
+  Logger.log("Overall Status: " + (overallStatus ? "SUCCESS" : "FAILED"));
+}
+
+
+/********************************************************
+ * doGet(e) - Serves the HTML dashboard UI
+ ********************************************************/
 function doGet(e) {
   try {
     Logger.log("doGet triggered for Dashboard.");
-    // Assumes you will create a dashboard.html file later for Phase 2
-    var template = HtmlService.createTemplateFromFile('dashboard');
-    // You could pass initial data to the template here if needed:
-    // template.initialData = getDashboardData();
+    var template = HtmlService.createTemplateFromFile('dashboard'); // Assumes 'dashboard.html' exists
+
+    // Pass configuration details needed by the client-side JS
+    template.sessionsImportId = CONFIG.sessions.wpImportId || ''; // Pass the specific import ID
+
     var htmlOutput = template.evaluate()
-      .setTitle('Sessions Sync Dashboard') // Updated Title for this project
-      .setSandboxMode(HtmlService.SandboxMode.IFRAME) // Recommended sandbox mode
-      .addMetaTag('viewport', 'width=device-width, initial-scale=1'); // For mobile responsiveness
+      .setTitle('Sessions Sync Dashboard')
+      .setSandboxMode(HtmlService.SandboxMode.IFRAME)
+      .addMetaTag('viewport', 'width=device-width, initial-scale=1');
 
     Logger.log("Successfully created HTML output for Dashboard.");
     return htmlOutput;
 
   } catch (error) {
-    Logger.log("ERROR in doGet: " + error + ". Did you create dashboard.html?");
-    // Provide a fallback error page if dashboard.html is missing or fails
+    Logger.log("ERROR in doGet: " + error + ". Did you create dashboard.html? Error details: " + error.stack);
     return HtmlService.createHtmlOutput(
-        "<h1>Error</h1><p>The dashboard UI could not be loaded.</p><p>Ensure the file 'dashboard.html' exists in this Apps Script project.</p><p>Error: " +
+        "<h1>Error</h1><p>The dashboard UI could not be loaded.</p><p>Error: " +
         Utilities.encodeHtml(error.message) + "</p>")
       .setTitle('Dashboard Error');
   }
 }
 
-/**
- * Retrieves the last sync status and results for the dashboard UI (Phase 2).
- * Reads data stored in User Properties.
- * @return {Object} An object containing the last sync details or a default state.
- */
+
+/********************************************************
+ * getDashboardData - Retrieves last sync status for the dashboard UI
+ * Reads data stored in User Properties. Includes initial WP status check.
+ * @return {Object} An object containing the last sync details + initial WP status.
+ ********************************************************/
 function getDashboardData() {
   Logger.log("getDashboardData called.");
-  // Use a unique property key for this project to avoid conflicts
-  const storedData = PropertiesService.getUserProperties().getProperty('lastSyncDashboardData_Sessions');
+  const storedDataKey = 'lastSyncDashboardData_Sessions'; // Unique key
+  const storedData = PropertiesService.getUserProperties().getProperty(storedDataKey);
+  let initialData = null;
+
+  // --- Load stored Sheet Sync data ---
   if (storedData) {
     try {
-      Logger.log("Found stored dashboard data.");
-      return JSON.parse(storedData);
+      initialData = JSON.parse(storedData);
+      Logger.log("Found and parsed stored dashboard data.");
     } catch (e) {
-      Logger.log("Error parsing stored dashboard data: " + e);
-      // Fall through to return default state on parsing error
+      Logger.log("Error parsing stored dashboard data: " + e + ". Using default.");
+      initialData = null; // Reset on parse error
     }
   }
 
-  Logger.log("No valid stored data found, returning default state.");
-  // Return a default structure if no data is stored yet
-  return {
-    lastSyncTimestamp: null,
-    lastSyncStatus: 'Never Run',
-    lastSyncDuration: 0,
-    lastSyncResults: {
-      typeCounters: {}, // Will only contain 'sessions' key after first run
-      totalErrors: 0,
-      // Log format assumes dashboard.html uses Feather Icons
-      logs: ["<li><i data-feather='info' class='icon status-icon-info'></i> No previous sync data available.</li>"],
-      recentItems: ["No previous sync actions recorded."]
-    }
-  };
+  // --- Set default structure if no valid stored data ---
+  if (!initialData) {
+    initialData = {
+      lastSyncTimestamp: null,
+      lastSyncStatus: 'Never Run',
+      lastSyncDuration: 0,
+      lastSyncResults: {
+        typeCounters: {}, // e.g., { sessions: { created: 0, ... } }
+        totalErrors: 0,
+        logs: ["<li><i data-feather='info' class='icon status-icon-info'></i> No previous sheet sync data available.</li>"],
+        recentItems: ["No previous sync actions recorded."]
+      }
+      // wpImportStatus will be added below
+    };
+  }
+
+  // --- Get initial WP Import status (if configured) ---
+  let initialWpStatus = null;
+  const wpImportId = CONFIG.sessions.wpImportId;
+  if (wpImportId) {
+      Logger.log("Attempting to get initial status for WP Import ID: " + wpImportId);
+      initialWpStatus = getImportStatus(wpImportId); // Use the existing function
+       if (!initialWpStatus) {
+          Logger.log("No initial status found in cache for WP Import ID: " + wpImportId);
+          // Set a default 'unknown' or 'idle' status if not found
+           initialWpStatus = { status: 'unknown', importId: wpImportId, message: 'No status found in cache.' };
+       }
+  } else {
+       Logger.log("WARN: Sessions WP Import ID not configured in CONFIG. Cannot fetch initial WP status.");
+       initialWpStatus = { status: 'not_configured', importId: null, message: 'WP Import ID not set up.' };
+  }
+
+  // Add the WP status to the data object being returned
+  initialData.wpImportStatus = initialWpStatus;
+
+  Logger.log("Returning initial dashboard data including WP Status:", JSON.stringify(initialData).substring(0, 500) + "...");
+  return initialData;
 }
 
-/**
- * Runs the full sync process when triggered by the dashboard UI (Phase 2).
+/********************************************************
+ * runSheetSync_Dashboard - Runs ONLY the sheet sync process for the dashboard UI.
  * Stores the results and returns them to the UI.
- * @return {Object} The final results object formatted for the dashboard.
- */
-function runFullSync_Dashboard() {
-  Logger.log("runFullSync_Dashboard called.");
+ * @return {Object} The final sheet sync results object formatted for the dashboard.
+ ********************************************************/
+function runSheetSync_Dashboard() {
+  Logger.log("runSheetSync_Dashboard called.");
   const startTime = new Date();
   let overallStatus = 'Unknown';
   let aggregatedResults = {
@@ -694,135 +1244,194 @@ function runFullSync_Dashboard() {
   let finalErrorMessage = null;
 
   try {
-      Logger.log("--- DASHBOARD TRIGGER: Starting Full Airtable to Sheets Sync ---");
+      Logger.log("--- DASHBOARD TRIGGER: Starting Airtable to SHEETS Sync ---");
       var masterLogCollector = [];
       var recentItemsCollector = []; // Passed to sync function
 
-      // Logger function for this specific run
       function addMasterLog(msg) {
           masterLogCollector.push(msg);
-          Logger.log(msg); // Also log to standard GAS logger
+          Logger.log(msg);
       }
 
       let hasSyncErrors = false;
+      const config = CONFIG.sessions; // Only run for sessions
 
-      // Loop through CONFIG (will only be 'sessions' currently)
-      for (var key in CONFIG) {
-          if (CONFIG.hasOwnProperty(key)) {
-              var config = CONFIG[key];
-              var syncFunctionName = config.syncFunctionName || 'syncAirtableToSheet';
-              addMasterLog(`\n--- Processing: ${config.type.toUpperCase()} (Sheet: ${config.sheetName}) ---`);
-              let result;
-              try {
-                  // Call the actual sync function, passing log/recent item collectors
-                  result = this[syncFunctionName](config, addMasterLog, recentItemsCollector);
+      if (config) {
+          var syncFunctionName = config.syncFunctionName || 'syncAirtableToSheet';
+          addMasterLog(`\n--- Processing: ${config.type.toUpperCase()} (Sheet: ${config.sheetName}) ---`);
+          let result;
+          try {
+              // Call the actual sync function
+              result = this[syncFunctionName](config, addMasterLog, recentItemsCollector);
 
-                  aggregatedResults.typeCounters[config.type] = result.counters; // Store counters by type
+              aggregatedResults.typeCounters[config.type] = result.counters;
 
-                  addMasterLog(`Result for ${config.type.toUpperCase()}: ${result.success ? "SUCCESS" : "FAILED"}`);
-                  if (!result.success) {
-                      hasSyncErrors = true;
-                      aggregatedResults.totalErrors += 1; // Count sync tasks that failed
-                      if (result.error) {
-                          addMasterLog(`ERROR: ${result.error}`);
-                           finalErrorMessage = (finalErrorMessage ? finalErrorMessage + "; " : "") + config.type + ": " + result.error;
-                      }
-                  }
-                   addMasterLog("Counters: " + JSON.stringify(result.counters));
-
-              } catch (e) {
-                  // Catch fatal errors during the sync function call itself
-                  addMasterLog(`FATAL ERROR during ${config.type} sync: ${e.message}${e.stack ? "\nStack: " + e.stack : ""}`);
+              addMasterLog(`Result for ${config.type.toUpperCase()}: ${result.success ? "SUCCESS" : "FAILED"}`);
+              if (!result.success) {
                   hasSyncErrors = true;
                   aggregatedResults.totalErrors += 1;
-                  finalErrorMessage = (finalErrorMessage ? finalErrorMessage + "; " : "") + `Fatal error in ${config.type}: ${e.message}`;
-                   // Ensure counters object exists even on fatal error for this type
-                   if (!aggregatedResults.typeCounters[config.type]) {
-                       aggregatedResults.typeCounters[config.type] = { updated: 0, skipped: 0, created: 0, deleted: 0 }; // Default counters
-                   }
+                  if (result.error) {
+                      addMasterLog(`ERROR: ${result.error}`);
+                       finalErrorMessage = (finalErrorMessage ? finalErrorMessage + "; " : "") + config.type + ": " + result.error;
+                  }
               }
+               addMasterLog("Counters: " + JSON.stringify(result.counters));
+
+          } catch (e) {
+              addMasterLog(`FATAL ERROR during ${config.type} sync: ${e.message}${e.stack ? "\nStack: " + e.stack : ""}`);
+              hasSyncErrors = true;
+              aggregatedResults.totalErrors += 1;
+              finalErrorMessage = (finalErrorMessage ? finalErrorMessage + "; " : "") + `Fatal error in ${config.type}: ${e.message}`;
+               if (!aggregatedResults.typeCounters[config.type]) {
+                   aggregatedResults.typeCounters[config.type] = { updated: 0, skipped: 0, created: 0, deleted: 0 }; // Default counters
+               }
           }
-      } // End loop through CONFIG
+      } else {
+           addMasterLog("ERROR: Configuration for 'sessions' not found.");
+           hasSyncErrors = true;
+           aggregatedResults.totalErrors += 1;
+           finalErrorMessage = "Sessions configuration missing.";
+      }
 
       addMasterLog("\n--- Recent Actions Summary (" + recentItemsCollector.length + " items) ---");
-      recentItemsCollector.forEach(item => addMasterLog("- " + item)); // Log summary actions
+      recentItemsCollector.forEach(item => addMasterLog("- " + item));
 
-      addMasterLog("--- Full Sync Run Complete ---");
+      addMasterLog("--- Sheet Sync Run Complete ---");
       overallStatus = hasSyncErrors ? 'Failed' : 'Success';
-      addMasterLog("Overall Status: " + overallStatus);
+      addMasterLog("Overall Sheet Sync Status: " + overallStatus);
 
-
-      // --- Format Logs for Dashboard (Basic HTML list items with icons) ---
-       aggregatedResults.logs = masterLogCollector.map(logString => {
-           let icon = 'chevrons-right'; // Default icon
-           let iconClass = 'status-icon-info'; // Default CSS class
-           const lowerLog = logString.toLowerCase();
-
-           // Determine icon and class based on log content keywords
-           if (lowerLog.includes('error') || lowerLog.includes('failed') || lowerLog.includes('fatal')) { icon = 'alert-triangle'; iconClass = 'status-icon-error'; }
-           else if (lowerLog.includes('warn')) { icon = 'alert-circle'; iconClass = 'status-icon-warning'; }
-           else if (lowerLog.includes('success') || lowerLog.includes('complete')) { icon = 'check-circle'; iconClass = 'status-icon-complete'; }
-           else if (lowerLog.includes('info:') || lowerLog.includes('processing') || lowerLog.includes('starting')) { icon = 'info'; iconClass = 'status-icon-info'; }
-           else if (lowerLog.includes('created') || lowerLog.includes('added ')) { icon = 'plus-circle'; iconClass = 'status-icon-new'; }
-           else if (lowerLog.includes('updated')) { icon = 'edit-2'; iconClass = 'status-icon-updated'; }
-           else if (lowerLog.includes('deleted') || lowerLog.includes('removed ')) { icon = 'trash-2'; iconClass = 'status-icon-error'; } // Use error color for delete
-           else if (lowerLog.includes('skipped') || lowerLog.includes('no changes')) { icon = 'skip-forward'; iconClass = 'status-icon-skipped'; }
-
-            // Basic HTML escaping for the message itself
-            const message = logString.replace(/</g, "<").replace(/>/g, ">");
-           // Return list item HTML (assumes dashboard.html includes Feather Icons library)
-           return `<li><i data-feather='${icon}' class='icon ${iconClass}'></i><span class="log-message">${message}</span></li>`;
-       });
-
-       // Use the already collected recent items
-       aggregatedResults.recentItems = recentItemsCollector;
-
+      // --- Format Logs for Dashboard ---
+       aggregatedResults.logs = formatLogsForDashboard_(masterLogCollector);
+       aggregatedResults.recentItems = recentItemsCollector; // Use collected items
 
   } catch (outerError) {
-      // Catch errors in the dashboard wrapper/aggregation logic itself
-      Logger.log("FATAL ERROR in runFullSync_Dashboard wrapper: " + outerError + (outerError.stack ? "\nStack: " + outerError.stack : ""));
+      Logger.log("FATAL ERROR in runSheetSync_Dashboard wrapper: " + outerError + (outerError.stack ? "\nStack: " + outerError.stack : ""));
       overallStatus = 'Failed';
       finalErrorMessage = "Dashboard wrapper error: " + outerError.message;
       aggregatedResults.totalErrors += 1;
-      // Add a fatal error message to the logs array
-       aggregatedResults.logs.push(`<li><i data-feather='x-octagon' class='icon status-icon-error'></i><span class="log-message">FATAL WRAPPER ERROR: ${Utilities.encodeHtml(outerError.message)}</span></li>`);
+      aggregatedResults.logs.push(`<li><i data-feather='x-octagon' class='icon status-icon-error'></i><span class="log-message">FATAL WRAPPER ERROR: ${Utilities.encodeHtml(outerError.message)}</span></li>`);
   }
 
-  // --- Prepare Final Result Object for the Dashboard ---
+  // --- Prepare Final Result Object ---
   const endTime = new Date();
-  const duration = endTime.getTime() - startTime.getTime(); // Duration in milliseconds
+  const duration = endTime.getTime() - startTime.getTime();
 
   const finalResult = {
-      lastSyncTimestamp: startTime.toISOString(), // Use ISO format for easy JS parsing
+      lastSyncTimestamp: startTime.toISOString(),
       lastSyncStatus: overallStatus,
       lastSyncDuration: duration,
-      lastSyncResults: aggregatedResults // Contains typeCounters, totalErrors, logs (HTML), recentItems
+      lastSyncResults: aggregatedResults,
+      success: overallStatus === 'Success', // Add explicit success boolean for client
+      error: overallStatus === 'Success' ? null : finalErrorMessage // Ensure error is null on success
   };
 
-   // --- Store Result in User Properties for next dashboard load ---
+   // --- Store Result in User Properties ---
+   storeDashboardData_(finalResult); // Use helper function
+
+  Logger.log("runSheetSync_Dashboard finished. Status: " + overallStatus + ", Duration: " + duration + "ms");
+  return finalResult; // Return results to client-side handler
+}
+
+/********************************************************
+ * Helper: Format Log Array for Dashboard HTML
+ ********************************************************/
+function formatLogsForDashboard_(logArray) {
+    if (!Array.isArray(logArray)) return [];
+    return logArray.map(logString => {
+        let icon = 'chevrons-right'; let iconClass = 'status-icon-info';
+        const lowerLog = String(logString).toLowerCase(); // Ensure string conversion
+
+        if (lowerLog.includes('error') || lowerLog.includes('failed') || lowerLog.includes('fatal')) { icon = 'alert-triangle'; iconClass = 'status-icon-error'; }
+        else if (lowerLog.includes('warn')) { icon = 'alert-circle'; iconClass = 'status-icon-warning'; }
+        else if (lowerLog.includes('success') || lowerLog.includes('complete')) { icon = 'check-circle'; iconClass = 'status-icon-complete'; }
+        else if (lowerLog.includes('info:') || lowerLog.includes('processing') || lowerLog.includes('starting')) { icon = 'info'; iconClass = 'status-icon-info'; }
+        else if (lowerLog.includes('created') || lowerLog.includes('added ')) { icon = 'plus-circle'; iconClass = 'status-icon-new'; }
+        else if (lowerLog.includes('updated')) { icon = 'edit-2'; iconClass = 'status-icon-updated'; }
+        else if (lowerLog.includes('deleted') || lowerLog.includes('removed ')) { icon = 'trash-2'; iconClass = 'status-icon-error'; }
+        else if (lowerLog.includes('skipped') || lowerLog.includes('no changes')) { icon = 'skip-forward'; iconClass = 'status-icon-skipped'; }
+        else if (lowerLog.includes('trigger') || lowerLog.includes('initiat')) { icon = 'play'; iconClass = 'status-icon-info'; }
+        else if (lowerLog.includes('cache')) { icon = 'database'; iconClass = 'status-icon-info'; }
+        else if (lowerLog.includes('cancel')) { icon = 'stop-circle'; iconClass = 'status-icon-warning'; }
+
+        const message = String(logString).replace(/</g, "<").replace(/>/g, ">"); // Basic HTML escaping
+        return `<li><i data-feather='${icon}' class='icon ${iconClass}'></i><span class="log-message">${message}</span></li>`;
+    });
+}
+
+/********************************************************
+ * Helper: Store Dashboard Data with Truncation Fallback
+ ********************************************************/
+function storeDashboardData_(resultObject) {
+   const dataKey = 'lastSyncDashboardData_Sessions';
    try {
-       // Use a unique property key for this project
-       // Use JSON.stringify, be mindful of potential size limits (~9KB per value, ~500KB total)
-       PropertiesService.getUserProperties().setProperty('lastSyncDashboardData_Sessions', JSON.stringify(finalResult));
-       Logger.log("Stored latest sync results for dashboard.");
+       PropertiesService.getUserProperties().setProperty(dataKey, JSON.stringify(resultObject));
+       Logger.log("Stored latest dashboard results in User Properties.");
    } catch (e) {
-       Logger.log("ERROR storing dashboard data: " + e);
-       // Attempt to store truncated data if size is the issue
+       Logger.log("WARN: Failed to store full dashboard data (might exceed size limits): " + e);
        try {
-            let truncatedResult = JSON.parse(JSON.stringify(finalResult)); // Deep copy
-            truncatedResult.lastSyncResults.logs = ["<li>Log truncated due to storage limits. Check execution logs.</li>"];
-            truncatedResult.lastSyncResults.recentItems = ["Recent items truncated due to storage limits."];
-            PropertiesService.getUserProperties().setProperty('lastSyncDashboardData_Sessions', JSON.stringify(truncatedResult));
-            Logger.log("Stored TRUNCATED sync results for dashboard.");
+            let truncatedResult = JSON.parse(JSON.stringify(resultObject)); // Deep copy
+            // Truncate potentially large fields
+            if (truncatedResult.lastSyncResults && truncatedResult.lastSyncResults.logs) {
+               truncatedResult.lastSyncResults.logs = ["<li>Log truncated due to storage limits. Check execution logs.</li>"];
+            }
+            if (truncatedResult.lastSyncResults && truncatedResult.lastSyncResults.recentItems) {
+                truncatedResult.lastSyncResults.recentItems = ["Recent items truncated due to storage limits."];
+            }
+            PropertiesService.getUserProperties().setProperty(dataKey, JSON.stringify(truncatedResult));
+            Logger.log("Stored TRUNCATED dashboard results in User Properties.");
        } catch (e2) {
-            // If even truncated fails, log error and update status
-            Logger.log("ERROR storing even truncated dashboard data: " + e2);
-            finalResult.lastSyncResults.logs.push(`<li><i data-feather='alert-triangle' class='icon status-icon-warning'></i><span class="log-message">Warning: Failed to store sync results.</span></li>`);
-            finalResult.lastSyncStatus = 'Failed'; // Mark as failed if storage fails critically
+            // If even truncated fails, log the error but don't stop the script
+            Logger.log("ERROR: Failed to store even truncated dashboard data: " + e2);
+            // Optionally add a warning to the logs being returned to the UI if possible
        }
    }
+}
 
-  Logger.log("runFullSync_Dashboard finished. Status: " + overallStatus + ", Duration: " + duration + "ms");
-  // Return the results object to the dashboard's client-side success handler
-  return finalResult;
+// --- Add onFailure (Optional but good practice) ---
+function onFailure(error) {
+  Logger.log("Client-side Script Error: " + error + " | Stack: " + (error.stack ? error.stack : '(no stack)'));
+}
+
+
+
+/********************************************************
+ * clearSpecificImportCache - Requests the Import Handler library to clear
+ *                            the cache for a specific import ID.
+ * Intended as a recovery tool if an import gets stuck in 'pending'.
+ * @param {string} importId - The WP All Import numerical ID to clear.
+ * @return {object} Result object { success: boolean, message: string } from the library call.
+ ********************************************************/
+function clearSpecificImportCache(importId) {
+  const logPrefix = "DASHBOARD [clearSpecificImportCache]: ";
+
+  if (!importId) {
+    Logger.log(logPrefix + "ERROR - No Import ID provided.");
+    return { success: false, message: "Import ID missing. Cannot request cache clear." };
+  }
+  importId = String(importId); // Ensure string
+
+  Logger.log(logPrefix + "Requesting Handler Library to clear cache for Import ID: '" + importId + "'");
+
+  try {
+    // --- Call the new Library Function ---
+    var clearResult = ImportHandlerLib.clearImportStatusInCache(importId);
+    // --- End Library Call ---
+
+    // Log the result received from the library
+    Logger.log(logPrefix + "Received response from Library clear request: Success=" + clearResult.success + ", Message=" + clearResult.message);
+
+    // Return the result object directly from the library
+    return clearResult;
+
+  } catch (e) {
+    // Handle errors during the library call itself
+    Logger.log(logPrefix + "ERROR calling ImportHandlerLib.clearImportStatusInCache for ID '" + importId + "': " + e);
+    let message = "Error requesting cache clear via library: " + e.message;
+    // Add specific checks if needed (like in getImportStatus error handling)
+    if (e.message.includes("ImportHandlerLib is not defined")) { message = "Library configuration error: " + e.message; }
+    else if (e.message.includes("You do not have permission")) { message = "Library permission error: " + e.message; }
+
+    // Return an error object
+    return { success: false, message: message };
+  }
 }
