@@ -2,7 +2,7 @@
 /**
  * Plugin Name: WP All Import - Logger & Control
  * Description: Tracks WP All Import progress, sends data to GAS dashboard, and provides a cache clearing endpoint. Use Central All Import Hanlder for all sites.
- * Version: 2.0
+ * Version: 2.1
  * Author: Four12 Global
  */
 
@@ -377,10 +377,10 @@ function wpaip_after_xml_import($import_id, $import) {
     // Attempt to get more accurate final stats from the $import object if possible
      if (is_object($import) && isset($import->options['last_run']) && is_array($import->options['last_run'])) {
         $last_run_stats = $import->options['last_run'];
-        // Overwrite manually counted stats with potentially more accurate final counts
-        if (isset($last_run_stats['created'])) $import_data['posts_created'] = intval($last_run_stats['created']);
-        if (isset($last_run_stats['updated'])) $import_data['posts_updated'] = intval($last_run_stats['updated']);
-        if (isset($last_run_stats['skipped'])) $import_data['posts_skipped'] = intval($last_run_stats['skipped']);
+        // // Overwrite manually counted stats with potentially more accurate final counts
+        // if (isset($last_run_stats['created'])) $import_data['posts_created'] = intval($last_run_stats['created']);
+        // if (isset($last_run_stats['updated'])) $import_data['posts_updated'] = intval($last_run_stats['updated']);
+        // if (isset($last_run_stats['skipped'])) $import_data['posts_skipped'] = intval($last_run_stats['skipped']);
         // Note: 'deleted' count from pmxi_delete_post hook is likely the only reliable source.
         error_log("WPAIP: Using final stats from import object's last_run for Import ID " . $import_id);
     } else {
