@@ -298,6 +298,101 @@
             .step-title { font-size: 1rem; }
             .options-menu { min-width: 180px; }
         }
+
+        /* --- ADDED STYLES for Environment Switch & Indicator --- */
+
+        /* Environment Indicator Chip */
+        #activeEnvironmentIndicator {
+            display: inline-block;
+            padding: 0.2rem 0.6rem;
+            font-size: 0.75rem;
+            font-weight: 600;
+            border-radius: 1rem; /* Pill shape */
+            margin-left: 0.75rem;
+            vertical-align: middle;
+            text-transform: uppercase;
+            transition: background-color var(--fast-transition-speed) ease, color var(--fast-transition-speed) ease;
+            border: 1px solid transparent; /* For consistent sizing */
+        }
+        #activeEnvironmentIndicator.env-live {
+            background-color: var(--color-error-dark); /* Red for live */
+            color: var(--bg-primary-dark);
+            border-color: var(--color-error-dark);
+        }
+        #activeEnvironmentIndicator.env-staging {
+            background-color: var(--color-success-dark); /* Green for staging */
+            color: var(--bg-primary-dark);
+            border-color: var(--color-success-dark);
+        }
+        :root[data-theme="light"] #activeEnvironmentIndicator.env-live {
+            background-color: var(--color-error-light);
+             color: var(--bg-primary-light);
+             border-color: var(--color-error-light);
+        }
+        :root[data-theme="light"] #activeEnvironmentIndicator.env-staging {
+             background-color: var(--color-success-light);
+             color: var(--bg-primary-light);
+             border-color: var(--color-success-light);
+        }
+
+        /* Environment Switch in Menu */
+        .environment-switch-container {
+            display: flex;
+            align-items: center;
+            justify-content: space-between; /* Pushes labels apart */
+            padding: 0.6rem 1rem; /* Match menu item padding */
+            cursor: default; /* Container isn't clickable */
+        }
+        .env-label {
+            font-size: 0.9rem;
+            color: var(--text-secondary);
+            font-weight: 500;
+            transition: color var(--fast-transition-speed) ease;
+        }
+        .env-label.active {
+            color: var(--text-primary);
+        }
+         /* Style the Staging label when active */
+        #env-switch-checkbox:not(:checked) ~ .env-label-staging {
+            color: var(--color-success); /* Green when staging active */
+            font-weight: 600;
+        }
+         /* Style the Live label when active */
+        #env-switch-checkbox:checked ~ .env-label-live {
+             color: var(--color-error); /* Red when live active */
+             font-weight: 600;
+        }
+
+        .env-switch { /* The toggle switch itself */
+            position: relative;
+            display: inline-block;
+            width: 44px; /* Match theme switch */
+            height: 22px; /* Match theme switch */
+            flex-shrink: 0; /* Prevent shrinking */
+            margin: 0 0.5rem; /* Space between labels and switch */
+        }
+        .env-switch input { display: none; }
+        .env-slider {
+            position: absolute; cursor: pointer; top: 0; left: 0; right: 0; bottom: 0;
+            background-color: var(--color-success); /* Default green (staging) */
+            transition: var(--transition-speed); border-radius: 22px;
+            border: 1px solid var(--border-color);
+        }
+        .env-slider:before {
+            position: absolute; content: ""; height: 16px; width: 16px;
+            left: 3px; bottom: 2px; background-color: var(--bg-secondary);
+            transition: var(--transition-speed); border-radius: 50%;
+        }
+        input:checked + .env-slider {
+            background-color: var(--color-error); /* Red when checked (live) */
+        }
+        input:checked + .env-slider:before {
+             transform: translateX(22px);
+        }
+        .env-switch input:disabled + .env-slider {
+            opacity: 0.5;
+            cursor: not-allowed;
+        }
     </style>
 </head>
 <body>
@@ -315,8 +410,11 @@
 
         <header>
             <h1>Sessions Sync Dashboard</h1>
-            <p>Sync Airtable data, update website, and manage cache.</p>
-             <!-- 3-Dot Options Menu Moved Here -->
+            <p>Sync Airtable data, update website, and manage cache.
+               <!-- ADDED: Environment Indicator Chip -->
+               <span id="activeEnvironmentIndicator" class="env-staging">Staging</span>
+            </p>
+             <!-- Options Menu Container -->
              <div class="options-menu-container" style="position: absolute; top: 3.5rem; right: 1rem;">
                 <button class="icon-button options-menu-button" id="optionsMenuButton" aria-label="More options">
                     <i data-feather="settings" class="icon status-icon-settings"></i>
@@ -329,6 +427,17 @@
                        <li><hr style="border: none; border-top: 1px solid var(--border-color); margin: 0.5rem 0;"></li>
                        <li><button id="clearCacheMenuButton"><i data-feather="wind" class="icon menu-icon"></i> Clear Website Cache</button></li>
                        <li><button id="resetImportStatusButton"><i data-feather="zap-off" class="icon menu-icon status-icon-zap-off"></i> Reset Stuck Import Status</button></li>
+                       <!-- ADDED: Environment Switch -->
+                       <li><hr style="border: none; border-top: 1px solid var(--border-color); margin: 0.5rem 0;"></li>
+                       <li class="environment-switch-container">
+                            <span class="env-label env-label-staging active">Staging</span>
+                            <label class="env-switch">
+                                <input type="checkbox" id="env-switch-checkbox">
+                                <span class="env-slider"></span>
+                            </label>
+                            <span class="env-label env-label-live">Live</span>
+                       </li>
+                       <!-- End Environment Switch -->
                     </ul>
                 </div>
             </div>
@@ -429,13 +538,72 @@
         let stepSync, indicatorSync, statusSync, detailsSync, buttonSync, buttonResync, buttonRetrySync;
         let stepImport, indicatorImport, statusImport, detailsImport, buttonImport, buttonReimport, buttonRetryImport, buttonCancelImport;
         let recentActivityList, detailedLogList;
+        // --- ADDED Elements ---
+        let activeEnvironmentIndicator, envSwitchCheckbox, envLabelStaging, envLabelLive;
 
         // --- State ---
-        let currentWpRunId = null; // Track the runId of the *current* initiated import *monitoring request*
+        let currentWpRunId = null;
         let pollingIntervalId = null;
-        const POLLING_INTERVAL_MS = 5000; // Check WP status every 5 seconds
+        const POLLING_INTERVAL_MS = 5000;
+        let currentActiveEnvironment = 'staging'; // Default, will be updated on load
 
         // --- Helper Functions ---
+
+        /** --- NEW --- Updates the visual state of the environment indicator chip and labels */
+        function updateEnvironmentIndicatorUI(environment) {
+             if (!activeEnvironmentIndicator || !envLabelStaging || !envLabelLive || !envSwitchCheckbox) return;
+
+             const isLive = environment === 'live';
+             activeEnvironmentIndicator.textContent = isLive ? 'Live' : 'Staging';
+             activeEnvironmentIndicator.className = isLive ? 'env-live' : 'env-staging'; // Add/remove classes
+
+             // Update label styles
+             envLabelStaging.classList.toggle('active', !isLive);
+             envLabelLive.classList.toggle('active', isLive);
+
+             // Update switch state WITHOUT triggering its event listener
+             // We store the *actual* state in currentActiveEnvironment
+             envSwitchCheckbox.checked = isLive;
+
+             // Update global state variable
+             currentActiveEnvironment = environment;
+
+             // Update tooltip/title for the header indicator? Optional
+             activeEnvironmentIndicator.title = `Currently targeting ${environment.toUpperCase()} environment for WP actions.`;
+        }
+
+        /** --- NEW --- Handles the response from setActiveEnvironment_Server */
+        function handleEnvironmentChangeSuccess(result) {
+             console.log("Environment Change Result:", result);
+             if (result && result.success) {
+                 addActivity(`Switched target environment to ${result.newEnvironment.toUpperCase()}.`);
+                 updateEnvironmentIndicatorUI(result.newEnvironment); // Update chip and labels
+                 // Display message (optional, could use addActivity instead)
+                 // alert(result.message);
+             } else {
+                 // Server reported failure
+                 const message = result ? result.message : "Unknown error changing environment.";
+                 addActivity(`Environment switch failed: ${message}`);
+                 alert(`Failed to switch environment: ${message}\n\nUI reverted to previous state: ${result.newEnvironment.toUpperCase()}`);
+                  // Revert UI to match actual server state (returned in result.newEnvironment on failure)
+                  updateEnvironmentIndicatorUI(result.newEnvironment);
+             }
+             // Re-enable the switch
+             if (envSwitchCheckbox) envSwitchCheckbox.disabled = false;
+             feather.replace(); // Redraw icons if any changed (unlikely here but safe)
+        }
+
+        /** --- NEW --- Handles failure of the setActiveEnvironment_Server call itself */
+        function handleEnvironmentChangeFailure(error) {
+             console.error("Failed to call setActiveEnvironment_Server:", error);
+             addActivity(`Error communicating environment change: ${error.message || error}`);
+             alert(`Error communicating environment change: ${error.message || error}\n\nPlease check logs and try again.`);
+              // Revert UI to match the known state before the failed attempt
+             updateEnvironmentIndicatorUI(currentActiveEnvironment);
+             // Re-enable the switch
+             if (envSwitchCheckbox) envSwitchCheckbox.disabled = false;
+             feather.replace();
+        }
 
         /**
          * Updates the UI state for a specific step in the process.
@@ -1040,6 +1208,15 @@
             clearLogs();
             addLog("<li><i data-feather='info' class='icon status-icon-info'></i><span class='log-message'>Dashboard loaded. Checking initial states...</span></li>");
 
+            // --- ADDED: Update Environment Indicator & Switch ---
+            if (data.activeEnvironment) {
+                 updateEnvironmentIndicatorUI(data.activeEnvironment);
+            } else {
+                 console.warn("Initial data did not include activeEnvironment. Defaulting UI to Staging.");
+                 updateEnvironmentIndicatorUI('staging'); // Default if missing
+            }
+            // --- END ADDED ---
+
             const lastSyncStatus = data.lastSyncStatus;
             const lastSyncTime = data.lastSyncTimestamp;
             const lastSyncDuration = data.lastSyncDuration;
@@ -1171,8 +1348,16 @@
             recentActivityList = document.getElementById('recent-activity-list');
             detailedLogList = document.getElementById('detailed-log-list');
 
+            // --- ADDED: Assign Environment Switch Elements ---
+            activeEnvironmentIndicator = document.getElementById('activeEnvironmentIndicator');
+            envSwitchCheckbox = document.getElementById('env-switch-checkbox');
+            envLabelStaging = document.querySelector('.env-label-staging');
+            envLabelLive = document.querySelector('.env-label-live');
+
             // Basic check for essential elements
-            if (!buttonSync || !buttonImport || !themeCheckbox || !copyLogButton || !optionsMenuButton || !optionsMenu || !clearCacheMenuButton || !resetImportStatusButton) {
+            if (!buttonSync || !buttonImport || !themeCheckbox || !copyLogButton || !optionsMenuButton || !optionsMenu || !clearCacheMenuButton || !resetImportStatusButton
+               || !activeEnvironmentIndicator || !envSwitchCheckbox || !envLabelStaging || !envLabelLive // ADDED check
+            ) {
                 console.error("CRITICAL ERROR: Failed to find essential UI elements on load.");
                 alert("Dashboard UI failed to load correctly. Please refresh or contact support.");
                 return;
@@ -1329,6 +1514,38 @@
                     updateStepUI('import', 'error', { statusText: 'Load Error' });
                 })
                 .getDashboardData();
+
+            // --- ADDED: Environment Switch Listener ---
+            envSwitchCheckbox.addEventListener('change', function() {
+                const isChecked = this.checked;
+                const targetEnvironment = isChecked ? 'live' : 'staging';
+                const currentEnvironment = currentActiveEnvironment; // Get state *before* change attempt
+
+                // Confirmation Dialog
+                const confirmationMessage = `WARNING:\n\nYou are attempting to switch the target environment to ${targetEnvironment.toUpperCase()}.\n\nAll WordPress actions (Update Website, Clear Cache) will target this environment.\n\nProceed?`;
+
+                // Disable switch immediately to prevent rapid clicks
+                this.disabled = true;
+
+                if (confirm(confirmationMessage)) {
+                    // User confirmed - call server function
+                    addActivity(`Attempting to switch environment to ${targetEnvironment.toUpperCase()}...`);
+                    optionsMenu.classList.add('hidden'); // Close menu
+
+                    google.script.run
+                        .withSuccessHandler(handleEnvironmentChangeSuccess)
+                        .withFailureHandler(handleEnvironmentChangeFailure)
+                        .setActiveEnvironment_Server(targetEnvironment);
+                } else {
+                    // User cancelled - revert the checkbox state visually
+                    addActivity(`Environment switch to ${targetEnvironment.toUpperCase()} cancelled by user.`);
+                    this.checked = !isChecked; // Set back to original state
+                     // Manually update labels based on reverted state
+                    envLabelStaging.classList.toggle('active', !this.checked);
+                    envLabelLive.classList.toggle('active', this.checked);
+                    this.disabled = false; // Re-enable immediately on cancel
+                }
+            });
 
         }); // End window load listener
 

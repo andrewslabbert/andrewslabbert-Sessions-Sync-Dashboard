@@ -1,5 +1,5 @@
 /*******************************************************************************
- * Sessions Sync Dashboard (Phase 2: WP Import Control) - v1.2 WP Integration
+ * Sessions Sync Dashboard (Phase 2: WP Import Control) - v1.3 WP Integration
  * Description: Fetches data from Airtable, syncs to Google Sheet, triggers
  *              WP All Import, monitors status via cache, and allows cache clearing.
  * Based On:    Sessixns Sync v1.1 & Events Sync Dashboard v2.0 structure.
@@ -11,8 +11,16 @@
  ********************************************************/
 
 // --- Retrieve Secrets from Script Properties ---
-const AIRTABLE_API_TOKEN = PropertiesService.getScriptProperties().getProperty('AIRTABLE_API_TOKEN');
-const WP_IMPORT_KEY = PropertiesService.getScriptProperties().getProperty('WP_IMPORT_KEY'); // <-- ADDED
+const _PROPS = PropertiesService.getScriptProperties();
+const AIRTABLE_API_TOKEN      = _PROPS.getProperty('AIRTABLE_API_TOKEN');
+const WP_IMPORT_KEY           = _PROPS.getProperty('WP_IMPORT_KEY');
+const ENV                     = (_PROPS.getProperty('ENVIRONMENT') || 'staging').toLowerCase();
+const BASES = {
+  staging: _PROPS.getProperty('WP_IMPORT_BASE_URL_STAGING'),
+  live:    _PROPS.getProperty('WP_IMPORT_BASE_URL_LIVE'),
+};
+const WP_IMPORT_BASE_URL = BASES[ENV];
+
 
 // --- Check if properties were retrieved successfully ---
 if (!AIRTABLE_API_TOKEN) {
@@ -22,6 +30,11 @@ if (!AIRTABLE_API_TOKEN) {
 if (!WP_IMPORT_KEY) { // <-- ADDED CHECK
   Logger.log("ERROR: WP_IMPORT_KEY not found in Script Properties. Please run storeSecrets() or set it manually.");
   throw new Error("Missing required Script Property: WP_IMPORT_KEY");
+}
+
+if (!WP_IMPORT_BASE_URL) {
+  Logger.log("ERROR: WP_IMPORT_BASE_URL not found for ENV '" + ENV + "'");
+  throw new Error("Missing WP_IMPORT_BASE_URL for " + ENV + " environment");
 }
 
 // --- Airtable Configuration (Existing) ---
@@ -34,7 +47,6 @@ const SESSIONS_IMPORT_LOG_SHEET_NAME = "sessions_wp_import_logs"; // <-- ADDED (
 const SESSIONS_CALLBACK_VERIFICATION_SHEET_NAME = "sessions_wp_callback_data"; // <-- ADDED (Specific Name)
 
 // --- WordPress Configuration --- // 
-const WP_IMPORT_BASE_URL = 'https://four12global.com/wp-load.php';
 const WP_ACTION_TIMEOUT = 45; // Seconds for actions like cache clear, initiate call
 
 // --- Script Configuration (Existing + Cache) ---
@@ -1222,7 +1234,11 @@ function getDashboardData() {
   // Add the WP status to the data object being returned
   initialData.wpImportStatus = initialWpStatus;
 
-  Logger.log("Returning initial dashboard data including WP Status:", JSON.stringify(initialData).substring(0, 500) + "...");
+  // --- Get Active Environment --- // ADDED
+  initialData.activeEnvironment = ENV; // Read the global constant reflecting the property
+  Logger.log("Current Active Environment from script property: " + initialData.activeEnvironment);
+
+  Logger.log("Returning initial dashboard data including WP Status & Environment:", JSON.stringify(initialData).substring(0, 500) + "...");
   return initialData;
 }
 
@@ -1433,5 +1449,45 @@ function clearSpecificImportCache(importId) {
 
     // Return an error object
     return { success: false, message: message };
+  }
+}
+
+// =======================================================
+//              ENVIRONMENT SWITCH FUNCTION           
+// =======================================================
+
+/**
+ * Sets the active WordPress environment ('live' or 'staging') in Script Properties.
+ * Called by the dashboard UI.
+ * @param {string} environment - The environment to set ('live' or 'staging').
+ * @return {object} Result object { success: boolean, message: string, newEnvironment: string }.
+ */
+function setActiveEnvironment_Server(environment) {
+  const logPrefix = "DASHBOARD [setActiveEnvironment_Server]: ";
+  const validEnvironments = ['live', 'staging'];
+
+  if (!environment || validEnvironments.indexOf(environment.toLowerCase()) === -1) {
+    Logger.log(logPrefix + "ERROR - Invalid environment provided: " + environment);
+    return { success: false, message: `Invalid environment specified: ${environment}. Must be 'live' or 'staging'.`, newEnvironment: ENV }; // Return current ENV on failure
+  }
+
+  const newEnv = environment.toLowerCase();
+  const currentEnv = ENV; // Get current environment from global const
+
+  if (newEnv === currentEnv) {
+    Logger.log(logPrefix + `Environment already set to '${newEnv}'. No change needed.`);
+    return { success: true, message: `Environment is already set to ${newEnv}.`, newEnvironment: newEnv };
+  }
+
+  try {
+    PropertiesService.getScriptProperties().setProperty('ENVIRONMENT', newEnv);
+    Logger.log(logPrefix + `Successfully changed ENVIRONMENT property from '${currentEnv}' to '${newEnv}'. NOTE: Script needs reload/re-run for WP_IMPORT_BASE_URL constant to update.`);
+    // IMPORTANT: The global WP_IMPORT_BASE_URL const won't update until the script *re-executes*.
+    // Subsequent calls within the *same execution* might still use the old URL.
+    // Dashboard calls (initiating sync etc.) start new executions, so they *will* use the new URL.
+    return { success: true, message: `Environment successfully set to ${newEnv}.`, newEnvironment: newEnv };
+  } catch (e) {
+    Logger.log(logPrefix + `ERROR setting ENVIRONMENT property to '${newEnv}': ${e}`);
+    return { success: false, message: `Failed to set environment: ${e.message}`, newEnvironment: currentEnv }; // Return current ENV on failure
   }
 }
