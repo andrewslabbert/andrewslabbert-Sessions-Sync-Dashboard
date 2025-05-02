@@ -1,6 +1,6 @@
 <?php
 /**
- * Plugin Name: WP All Import - Logger & Control
+ * Plugin Name: WP All Import - Monitor
  * Description: Tracks WP All Import progress, sends data to GAS dashboard, and provides a cache clearing endpoint. Use Central All Import Hanlder for all sites.
  * Version: 2.1
  * Author: Four12 Global

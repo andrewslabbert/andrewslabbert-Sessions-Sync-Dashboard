@@ -34,7 +34,7 @@ const SESSIONS_IMPORT_LOG_SHEET_NAME = "sessions_wp_import_logs"; // <-- ADDED (
 const SESSIONS_CALLBACK_VERIFICATION_SHEET_NAME = "sessions_wp_callback_data"; // <-- ADDED (Specific Name)
 
 // --- WordPress Configuration --- // 
-const WP_IMPORT_BASE_URL = 'https://wordpress-1204105-4784464.cloudwaysapps.com/wp-load.php';
+const WP_IMPORT_BASE_URL = 'https://four12global.com/wp-load.php';
 const WP_ACTION_TIMEOUT = 45; // Seconds for actions like cache clear, initiate call
 
 // --- Script Configuration (Existing + Cache) ---
@@ -1142,7 +1142,7 @@ function runFullSync() {
 function doGet(e) {
   try {
     Logger.log("doGet triggered for Dashboard.");
-    var template = HtmlService.createTemplateFromFile('dashboard'); // Assumes 'dashboard.html' exists
+    var template = HtmlService.createTemplateFromFile('SessionsDashUI'); // Assumes 'dashboard.html' exists
 
     // Pass configuration details needed by the client-side JS
     template.sessionsImportId = CONFIG.sessions.wpImportId || ''; // Pass the specific import ID
