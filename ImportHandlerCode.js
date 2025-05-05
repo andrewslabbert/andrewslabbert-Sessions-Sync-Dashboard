@@ -107,6 +107,7 @@ function doGet(e) {
 
 
 function doPost(e) {
+  Logger.log(JSON.stringify(e, null, 2));Logger.log(JSON.stringify(e, null, 2));
   const receivedTimestamp = new Date();
   const logPrefix = "HANDLER [doPost]: ";
   let rawData = '';

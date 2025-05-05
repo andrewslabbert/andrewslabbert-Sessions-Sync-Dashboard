@@ -420,11 +420,10 @@ function wpaip_send_data_to_script($import_id, $import_data) {
     //               of your DEDICATED "WP Callback Handler" Apps Script.
     // ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
     $script_url = add_query_arg(
-        'secret',           //  ➜  query‑param name expected by GAS
-        WPAIP_SECURITY_KEY, //  ➜  must match the WEBHOOK_SECRET in Script Properties
-        'https://script.google.com/macros/s/AKfycbyjMiz0VBM6BSRe-fcjxt0S-f8m-QAr5TLKJb7Muoph7kwUapTGKi_LP6u8tbz1hgdG/exec'
+        'secret',
+        WPAIP_SECURITY_KEY,
+        'https://script.googleusercontent.com/macros/s/AKfycbyjMiz0VBM6BSRe-fcjxt0S-f8m-QAr5TLKJb7Muoph7kwUapTGKi_LP6u8tbz1hgdG/exec'
     );
-
 
     if (empty($script_url) || $script_url === 'PASTE_YOUR_NEW_CALLBACK_HANDLER_APPS_SCRIPT_URL_HERE/exec') {
         error_log($log_prefix . "ERROR - Google Apps Script URL is not configured correctly in the plugin!");
@@ -468,7 +467,16 @@ function wpaip_send_data_to_script($import_id, $import_data) {
     error_log($log_prefix . "Payload Snippet: " . substr($payload, 0, 250) . "...");
 
     // Send the request
-    $response = wp_remote_post($script_url, $args);
+    $response = wp_remote_post(
+        $script_url,
+        [
+            'headers' => [
+                'Content-Type' => 'application/json; charset=utf-8',
+            ],
+            'body'    => wp_json_encode( $payload ),   // $payload is the array you already build
+            'timeout' => 15,
+        ]
+    );
 
     // Log after sending
     error_log($log_prefix . "=== AFTER wp_remote_post ===");
