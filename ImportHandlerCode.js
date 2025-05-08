@@ -107,7 +107,6 @@ function doGet(e) {
 
 
 function doPost(e) {
-  Logger.log(JSON.stringify(e, null, 2));Logger.log(JSON.stringify(e, null, 2));
   const receivedTimestamp = new Date();
   const logPrefix = "HANDLER [doPost]: ";
   let rawData = '';
@@ -124,7 +123,9 @@ function doPost(e) {
 // ===============================================
   // --- START DEBUGGING BLOCK ---
   // ===============================================
-  Logger.log(logPrefix + "DEBUG: doPost triggered. Inspecting event object 'e'.");
+  if (e.postData && e.postData.contents) {
+  Logger.log(`postData length: ${e.postData.contents.length}`); // length only
+}
   try {
     if (e) {
       // Log all top-level keys available in the event object 'e'

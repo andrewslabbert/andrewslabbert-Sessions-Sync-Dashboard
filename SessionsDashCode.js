@@ -1,7 +1,7 @@
 /*******************************************************************************
  * Sessions Sync Dashboard (Phase 2: WP Import Control) - v1.3 WP Integration
  * Description: Fetches data from Airtable, syncs to Google Sheet, triggers
- *              WP All Import, monitors status via cache, and allows cache clearing.
+ *              WP   All Import, monitors status via cache, and allows cache clearing.
  * Based On:    Sessixns Sync v1.1 & Events Sync Dashboard v2.0 structure.
  * Version:     1.3 - Sessions (WP Import Integration)
  *******************************************************************************/
@@ -727,7 +727,7 @@ function initiateWordPressImport(importId) {
     var baseUrl = WP_IMPORT_BASE_URL +
                   '?import_key=' + encodeURIComponent(WP_IMPORT_KEY) +
                   '&rand=' + Math.random(); // Keep rand for cache busting
-    var triggerUrl = baseUrl + '&import_id=' + encodeURIComponent(importId) + '&action=trigger';
+    var triggerUrl = baseUrl + '&import_id=' + encodeURIComponent(importId) + '&action=run_cli';
     // We DO NOT construct or call the processingUrl here
 
     // --- Set Fetch Options ---
@@ -747,44 +747,38 @@ function initiateWordPressImport(importId) {
         triggerResponseCode = triggerResponse.getResponseCode();
         triggerResponseText = triggerResponse.getContentText() || '(No response body)';
         logWP("INFO: WP Trigger Response Code: " + triggerResponseCode);
-        Logger.log("DEBUG: WP Trigger Response Body: " + triggerResponseText); // Log the actual response
+        Logger.log("DEBUG: WP Trigger Response Body: " + triggerResponseText);
 
         if (triggerResponseCode === 200) {
             var triggerResponseJson = {};
-            var wpMessage = triggerResponseText; // Default to full text
             try {
-                 triggerResponseJson = JSON.parse(triggerResponseText);
-                 // Prefer the JSON message if it exists, otherwise use the raw text
-                 wpMessage = (triggerResponseJson && triggerResponseJson.message) ? triggerResponseJson.message : triggerResponseText;
-            } catch (e) { /* Ignore parse error, use raw text */ }
-
-            // Check if WP confirmed trigger OR said it was already triggered/running
-            // Look for positive confirmation keywords or "already" keywords.
-            const msgLower = wpMessage.toLowerCase();
-            if ( (triggerResponseJson && triggerResponseJson.status === 200) || // Check explicit JSON status first
-                 msgLower.includes("triggered") ||
-                 msgLower.includes("import started") ||
-                 msgLower.includes("already triggered") ||
-                 msgLower.includes("already running") )
-            {
-                triggerSuccess = true;
-                // Determine if it was newly triggered or already running
-                if (msgLower.includes("already")) {
-                    overallStatus = 'already_active'; // Indicate it was already running
-                    overallMessage = 'Trigger successful: Import was already running/triggered.';
-                    logWP("INFO: Trigger successful (HTTP 200). WP indicates import already active: " + wpMessage);
+                triggerResponseJson = JSON.parse(triggerResponseText);
+                // PHP plugin now sends { success: true, data: { message: "...", ... } }
+                // Let's check for this structure
+                if (triggerResponseJson.success === true && triggerResponseJson.data && triggerResponseJson.data.message) {
+                    triggerSuccess = true;
+                    overallStatus = 'triggered_waiting'; // CLI initiated, waiting for actual import completion via callback
+                    overallMessage = triggerResponseJson.data.message; // Use the message from WP
+                    logWP("INFO: Trigger successful (HTTP 200). WP confirmation: " + overallMessage);
+                    // Optional: log other data from triggerResponseJson.data if useful
+                    if (triggerResponseJson.data.launch_result) {
+                        logWP("DEBUG: Launch details - PID: " + (triggerResponseJson.data.launch_result.pid || 'unknown') + 
+                              ", Exit Code: " + triggerResponseJson.data.launch_result.exit_code +
+                              ", Log: " + triggerResponseJson.data.launch_result.log_file);
+                    }
                 } else {
-                    overallStatus = 'triggered_waiting'; // Indicate newly triggered, waiting for cron processing
-                    overallMessage = 'Trigger successful: Import initiated, waiting for server processing.';
-                    logWP("INFO: Trigger successful (HTTP 200). WP confirmation: " + wpMessage);
+                    // JSON parsed, but not the expected success structure
+                    triggerSuccess = false;
+                    overallStatus = 'trigger_wp_json_error';
+                    overallMessage = 'Trigger command sent, but WP reported an issue or unexpected JSON response: ' + triggerResponseText.substring(0, 200);
+                    logWP("WARN: Trigger HTTP 200, but unexpected WP JSON response: " + overallMessage);
                 }
-                 // Regardless of new/already active, the dashboard should start polling
-            } else {
-                 // HTTP 200, but unexpected message from WP
-                 triggerSuccess = false;
-                 overallStatus = 'trigger_wp_error';
-                 overallMessage = 'Trigger command sent, but WP reported an issue or unexpected response: ' + wpMessage.substring(0, 200); // Limit message length
-                 logWP("WARN: Trigger HTTP 200, but unexpected WP response: " + overallMessage);
+            } catch (e) {
+                // Failed to parse JSON - this *shouldn't* happen if PHP is fixed
+                triggerSuccess = false;
+                overallStatus = 'trigger_parse_error';
+                overallMessage = 'WP trigger response was not valid JSON. Response: ' + triggerResponseText.substring(0, 200);
+                logWP("ERROR: Failed to parse JSON response from WP trigger: " + overallMessage + ". Error: " + e.message);
             }
         } else {
             // HTTP error (4xx, 5xx)
@@ -794,18 +788,19 @@ function initiateWordPressImport(importId) {
             logWP("ERROR: " + overallMessage);
         }
     } catch (triggerErr) {
-         triggerSuccess = false; // Assume failure unless it's a timeout
-         if (triggerErr.message.includes("Timeout") || triggerErr.message.includes("timed out")) {
-             overallStatus = 'trigger_timeout_error';
-             overallMessage = 'Request to trigger import timed out after ' + WP_ACTION_TIMEOUT + 's. Status uncertain, but start monitoring.';
-             logWP("WARN: Trigger call timed out. Assuming trigger might have worked. " + triggerErr.message);
-             // Treat timeout cautiously - it *might* have triggered. Allow polling.
-             triggerSuccess = true; // Let dashboard poll even on timeout
-         } else {
-            overallStatus = 'trigger_fetch_error';
-            overallMessage = 'Error making trigger request: ' + triggerErr.message;
-            logWP("EXCEPTION during trigger call: " + overallMessage);
-         }
+        // If it times out, it's still ambiguous if the CLI launched.
+        // The current logic to set triggerSuccess = true on timeout (and let polling decide) is reasonable.
+        triggerSuccess = false;
+        if (triggerErr.message.includes("Timeout") || triggerErr.message.includes("timed out")) {
+            overallStatus = 'trigger_timeout_error';
+            overallMessage = 'Request to trigger import timed out after ' + WP_ACTION_TIMEOUT + 's. Status uncertain, but start monitoring.';
+            logWP("WARN: Trigger call timed out. Assuming trigger might have worked. " + triggerErr.message);
+            triggerSuccess = true; // Let dashboard poll even on timeout
+        } else {
+           overallStatus = 'trigger_fetch_error';
+           overallMessage = 'Error making trigger request: ' + triggerErr.message;
+           logWP("EXCEPTION during trigger call: " + overallMessage);
+        }
     }
 
     // --- Prepare Result ---
@@ -1490,4 +1485,77 @@ function setActiveEnvironment_Server(environment) {
     Logger.log(logPrefix + `ERROR setting ENVIRONMENT property to '${newEnv}': ${e}`);
     return { success: false, message: `Failed to set environment: ${e.message}`, newEnvironment: currentEnv }; // Return current ENV on failure
   }
+}
+
+/** Handles polled status updates from getImportStatus */
+function handleWpImportStatusUpdate(statusResult) {
+    console.log("WP Import Status Update Received:", statusResult);
+
+    if (!statusResult) { // Cache miss, likely due to pre-emptive clear
+        console.warn("Received null status update during polling (expected after pre-emptive clear).");
+        updateStepUI('import', 'active', {
+            statusText: 'Website update initiated. Waiting for progress...', // More accurate than "checking status"
+            activeButtonText: 'Processing...'
+        });
+        // Only add activity log if it's a new state, or less frequently
+        // addActivity("Website update in progress. Monitoring..."); // Avoid flooding if it polls null many times
+        return; // Continue polling
+    }
+
+    // Optional: Add check against currentWpRunId if needed, but less critical now
+    // if (currentWpRunId && statusResult.runId && statusResult.runId !== currentWpRunId) { ... }
+
+    switch (statusResult.status) {
+        case 'pending':
+        case 'processing': // Treat processing the same as pending visually
+        case 'triggered': // Treat triggered the same as pending visually
+             updateStepUI('import', 'active', {
+                 statusText: statusResult.message || 'Website update is processing...',
+                 activeButtonText: 'Processing...'
+             });
+             // Reduce redundant activity logs during polling if message is the same? Optional.
+             // if(statusElement.textContent !== statusResult.message) { addActivity(statusResult.message || "Website update in progress..."); }
+            break;
+        case 'complete':
+            Logger.log("Polling received 'complete' status. Finalizing UI."); // Add log
+            // ** NEW: Explicitly call the completion handler with the final data **
+            handleWpImportCompletion(statusResult);
+            // Now stop polling AFTER the UI has been updated with final numbers
+            stopPollingWpStatus();
+            break; // Keep the break statement
+        case 'failed': // Explicit failure from WP All Import (e.g., via hook data)
+             stopPollingWpStatus();
+             handleWpImportFailure(statusResult);
+             break;
+        case 'error': // Error reported by getImportStatus itself (e.g., library call failure)
+             stopPollingWpStatus();
+             handleWpImportFailure(statusResult); // Treat library errors as failure for UI
+             break;
+        case 'cancelled': // Status explicitly set to cancelled
+            stopPollingWpStatus();
+            handleWpImportCancellation(statusResult);
+            break;
+         case 'unknown': // e.g. cache miss after pending, or initial state
+             updateStepUI('import', 'active', { // Keep active visually, but indicate potential issue
+                 statusText: statusResult.message || 'Monitoring website update status...', // Generic message
+                 activeButtonText: 'Processing...'
+             });
+             // addActivity(statusResult.message || "Monitoring website update status...");
+             break;
+         case 'not_configured': // Should only happen on initial load, but handle defensively
+             stopPollingWpStatus();
+              updateStepUI('import', 'error', {
+                   statusText: 'Website Update not configured.',
+                   detailsHtml: ''
+               });
+               if(buttonImport) buttonImport.disabled = true;
+               break;
+        default: // Any other status or unexpected value
+            console.warn("Unknown WP import status received during polling:", statusResult.status);
+            // Keep polling but don't flood logs
+            updateStepUI('import', 'active', {
+                 statusText: `Processing... (Status: ${statusResult.status || 'N/A'})`,
+                 activeButtonText: 'Processing...'
+             });
+    }
 }

@@ -43,6 +43,27 @@ function wpaip_handle_direct_actions() {
             wpaip_do_clear_breeze_cache(); // This function will handle response and exit
             break;
 
+        case 'run_cli':
+            if (isset($_GET['import_id'])) {
+                $import_id_int = intval($_GET['import_id']);
+                // Get launch result including exit code and output
+                $launch_result = wpaip_launch_import_cli($import_id_int);
+
+                // Send JSON response with launch details
+                wpaip_send_json_success(
+                    "WP-CLI import process for ID " . $import_id_int . " has been initiated.",
+                    200,
+                    [
+                        'import_id' => $import_id_int,
+                        'status_message' => 'CLI initiated',
+                        'launch_result' => $launch_result
+                    ]
+                );
+            } else {
+                wpaip_send_json_error('Import ID not provided for run_cli action.', 400);
+            }
+            break;
+
         // IMPORTANT: NO 'cancel' or 'cancel_import' case here.
         // Let WordPress and WP All Import handle their native actions.
 
@@ -111,6 +132,73 @@ function wpaip_do_clear_breeze_cache() {
         );
     }
     // Note: wpaip_send_json_success/error include exit()
+}
+
+/**
+ * Launches WP‑CLI for a specific import in the background.
+ */
+/**
+ * Launches WP-CLI for a specific import in the background.
+ * Logs output to a file within this plugin's directory.
+ */
+function wpaip_launch_import_cli( $import_id ) {
+    $wp   = '/usr/local/bin/wp'; // Your verified WP-CLI path
+    $root = ABSPATH;             // WordPress root for this instance
+
+    // --- Define Log Directory and File ---
+    $plugin_base_dir = plugin_dir_path(__FILE__); // Gets /path/to/wp-content/plugins/wp-all-import-monitor/
+    $log_dir_name = 'import-logs'; // Just the name of the subdirectory
+    $log_dir_path = $plugin_base_dir . $log_dir_name . '/'; // Full path to log directory
+    $log_file_name = 'wpai_' . (int) $import_id . '.log'; // e.g., wpai_31.log
+    $log_file_full_path = $log_dir_path . $log_file_name;
+
+    // --- Ensure Log Directory Exists ---
+    if (!file_exists($log_dir_path)) {
+        // Try to create it. Set permissions carefully.
+        if (!mkdir($log_dir_path, 0755, true) && !is_dir($log_dir_path)) {
+            error_log("WPAIP: ERROR - Could not create log directory: " . $log_dir_path);
+            $log_file_full_path = '/tmp/wpai_fallback_' . (int) $import_id . '.log'; // Fallback if dir creation fails
+            error_log("WPAIP: Falling back to temporary log file: " . $log_file_full_path);
+        } else {
+            error_log("WPAIP: Log directory created or already exists: " . $log_dir_path);
+            // Optional: Add an .htaccess to deny direct web access
+            if (!file_exists($log_dir_path . '.htaccess')) {
+                @file_put_contents($log_dir_path . '.htaccess', "Require all denied\n");
+            }
+            // Optional: Add an empty index.html to prevent directory listing
+            if (!file_exists($log_dir_path . 'index.html')) {
+                @file_put_contents($log_dir_path . 'index.html', "<!-- Silence is golden -->\n");
+            }
+        }
+    } else {
+         error_log("WPAIP: Log directory already exists: " . $log_dir_path);
+    }
+
+    // Build a FULL command string
+    $cmd = sprintf(
+        'setsid %s --path=%s all-import run %d --quiet --force-run '
+      . '> %s 2>&1 < /dev/null & echo $!',
+        escapeshellarg( $wp ),
+        escapeshellarg( $root ),
+        (int) $import_id,
+        escapeshellarg( $log_file_full_path )
+    );
+
+    $output = [];
+    $code   = 0;
+    error_log( "WPAIP: WP-CLI for import {$import_id} will attempt to log to: " . $log_file_full_path );
+
+    $pid    = exec( $cmd, $output, $code );
+
+    error_log( "WPAIP: Spawn cmd for import {$import_id} resulted in exit_code=$code, pid=$pid. Log actual path: " . $log_file_full_path );
+
+    return [
+        'success' => ($code === 0 && !empty($pid)),
+        'exit_code' => $code,
+        'pid' => $pid,
+        'log_file' => $log_file_full_path,
+        'raw_output' => $output
+    ];
 }
 
 // --- JSON Response Helpers ---
@@ -422,7 +510,7 @@ function wpaip_send_data_to_script($import_id, $import_data) {
     $script_url = add_query_arg(
         'secret',
         WPAIP_SECURITY_KEY,
-        'https://script.googleusercontent.com/macros/s/AKfycbyjMiz0VBM6BSRe-fcjxt0S-f8m-QAr5TLKJb7Muoph7kwUapTGKi_LP6u8tbz1hgdG/exec'
+        'https://script.google.com/macros/s/AKfycbyjMiz0VBM6BSRe-fcjxt0S-f8m-QAr5TLKJb7Muoph7kwUapTGKi_LP6u8tbz1hgdG/exec'
     );
 
     if (empty($script_url) || $script_url === 'PASTE_YOUR_NEW_CALLBACK_HANDLER_APPS_SCRIPT_URL_HERE/exec') {
@@ -445,62 +533,38 @@ function wpaip_send_data_to_script($import_id, $import_data) {
         return;
     }
 
-    //* ---------- 2) wp_remote_post  ---------- */
-    $args = array(
-    'method'      => 'POST',
-    'timeout'     => 60,
-    'redirection' => 5,
-    'httpversion' => '1.1',
-    'blocking'    => true,
-    'headers'     => array(
-        'Content-Type' => 'application/json; charset=utf-8',
-        'User-Agent'   => 'WordPress-WPAIP-Logger/' . get_bloginfo('version') . '; ' . get_bloginfo('url')
-    ),
-    'body'        => $payload,
-    'cookies'     => array(),
-    'sslverify'   => true
-    );
-
     // Log before sending
-    error_log($log_prefix . "=== BEFORE wp_remote_post ===");
-    error_log($log_prefix . "Target URL: " . $script_url);
-    error_log($log_prefix . "Payload Snippet: " . substr($payload, 0, 250) . "...");
+    error_log( $log_prefix . "=== BEFORE wp_remote_post ===" );
 
-    // Send the request
-    $response = wp_remote_post(
-        $script_url,
-        [
-            'headers' => [
-                'Content-Type' => 'application/json; charset=utf-8',
-            ],
-            'body'    => wp_json_encode( $payload ),   // $payload is the array you already build
-            'timeout' => 15,
-        ]
-    );
+    // Use cURL directly to ensure payload is sent untouched
+    $curl = curl_init( $script_url );
+    curl_setopt_array( $curl, [
+        CURLOPT_POST            => true,
+        CURLOPT_POSTFIELDS      => $payload,
+        CURLOPT_HTTPHEADER      => [
+            'Content-Type: application/json',
+            'Content-Length: ' . strlen( $payload ),
+            'Expect:',
+        ],
+        CURLOPT_RETURNTRANSFER  => true,
+        CURLOPT_TIMEOUT         => 60,
+    ] );
 
-    // Log after sending
-    error_log($log_prefix . "=== AFTER wp_remote_post ===");
+    $response_body  = curl_exec( $curl );
+    $response_code  = curl_getinfo( $curl, CURLINFO_HTTP_CODE );
+    $curl_error     = curl_error( $curl );
+    curl_close( $curl );
+
+    error_log( $log_prefix . "Received RESPONSE. Code: {$response_code}" );
+    if ( $curl_error ) {
+        error_log( $log_prefix . "cURL error: {$curl_error}" );
+    }
 
     // Process the response
-    if (is_wp_error($response)) {
-        $error_code = $response->get_error_code();
-        $error_message = $response->get_error_message();
-        error_log($log_prefix . "WP_ERROR sending data. Code: [" . $error_code . "] Message: " . $error_message);
-        $error_data = $response->get_error_data();
-        if ($error_data) {
-             error_log($log_prefix . "WP_ERROR Data: " + print_r($error_data, true));
-        }
+    if ( in_array( $response_code, [200, 302], true ) ) {
+        error_log( $log_prefix . "Callback accepted (HTTP {$response_code})." );
     } else {
-        $response_code = wp_remote_retrieve_response_code($response);
-        $response_body = wp_remote_retrieve_body($response);
-        error_log($log_prefix . "Received RESPONSE. Code: " . $response_code);
-        // Log response body, especially if not 200 OK
-        if ($response_code == 200) {
-             error_log($log_prefix . "Success Response Body Snippet: " . substr($response_body, 0, 300) . (strlen($response_body) > 300 ? '...' : ''));
-        } else {
-             error_log($log_prefix . "WARNING - Non-200 Response Body: " . $response_body);
-        }
+        error_log( $log_prefix . "WARNING – Non-200/302 Response: {$response_body}" );
     }
 }
-
 ?>

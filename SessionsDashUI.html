@@ -1388,16 +1388,42 @@
                     }
                     // Disable other import buttons immediately
                     [buttonImport, buttonReimport, buttonRetryImport].forEach(b => { if(b && b !== btn) b.disabled = true; });
-                    // Set UI to active state immediately, indicating trigger attempt
-                    updateStepUI('import', 'active', { statusText: 'Sending trigger request...', activeButtonText: 'Triggering...' });
-                    addActivity("Sending website update trigger request..."); // More accurate message
-                    stopPollingWpStatus(); // Ensure no old polling is running before triggering
 
-                    // --- CALL THE CORRECT SERVER FUNCTION ---
+                    // 1. Update UI to an intermediate "Preparing..." state
+                    updateStepUI('import', 'active', { statusText: 'Preparing update...', activeButtonText: 'Preparing...' });
+                    addActivity(`Preparing to update website (ID: ${SESSIONS_IMPORT_ID}). Clearing previous status...`);
+                    stopPollingWpStatus(); // Ensure no old polling is running
+
+                    // 2. Call server to clear the handler's cache for this import ID
                     google.script.run
-                        .withSuccessHandler(handleWpImportInitiationResult) // Use the correct handler
-                        .withFailureHandler(handleWpImportInitiationResult) // Use the same handler, check result.success
-                        .initiateWordPressImport(SESSIONS_IMPORT_ID);     // Call the trigger function
+                        .withSuccessHandler(function(clearResult) {
+                            console.log("Pre-emptive cache clear result for import handler:", clearResult);
+                            if (clearResult && clearResult.success) {
+                                addActivity(`Previous status for ID ${SESSIONS_IMPORT_ID} cleared from handler. Triggering WP import...`);
+                            } else {
+                                // Log a warning but proceed. The import might still work, or the cache was already clear.
+                                addActivity(`Warning: Could not clear previous handler status for ID ${SESSIONS_IMPORT_ID}: ${clearResult?.message || 'Unknown clear error'}. Proceeding with trigger...`);
+                            }
+
+                            // 3. NOW, trigger the WordPress import
+                            updateStepUI('import', 'active', { statusText: 'Sending trigger request to WP...', activeButtonText: 'Triggering...' });
+
+                            google.script.run
+                                .withSuccessHandler(handleWpImportInitiationResult) // This handler starts polling on success
+                                .withFailureHandler(handleWpImportInitiationResult) // Check result.success
+                                .initiateWordPressImport(SESSIONS_IMPORT_ID);
+                        })
+                        .withFailureHandler(function(error) {
+                            console.error("Failed to call clearSpecificImportCache (pre-import):", error);
+                            addActivity(`Error clearing previous handler status: ${error.message || error}. Attempting WP trigger anyway...`);
+                            // Proceed with trigger even if pre-emptive clear fails on the GAS side
+                            updateStepUI('import', 'active', { statusText: 'Sending trigger request to WP (after clear error)...', activeButtonText: 'Triggering...' });
+                            google.script.run
+                                .withSuccessHandler(handleWpImportInitiationResult)
+                                .withFailureHandler(handleWpImportInitiationResult)
+                                .initiateWordPressImport(SESSIONS_IMPORT_ID);
+                        })
+                        .clearSpecificImportCache(SESSIONS_IMPORT_ID); // This calls the Lib function in ImportHandler
                 });
             });
 
