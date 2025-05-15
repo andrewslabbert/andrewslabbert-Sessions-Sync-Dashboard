@@ -76,7 +76,7 @@ const WP_IMPORT_ID_TO_CONFIG_KEY = {
    '31': 'sessions', 
 
    // -- Events --
-   '15': 'events',   
+   '30': 'events',   
 
    // -- Add other mappings --
    // 'YOUR_PRODUCT_IMPORT_ID_STRING': 'products',

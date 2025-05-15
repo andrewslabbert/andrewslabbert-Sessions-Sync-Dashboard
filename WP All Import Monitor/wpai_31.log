@@ -1,4 +1,8 @@
-Notice: Function _load_textdomain_just_in_time was called <strong>incorrectly</strong>. Translation loading for the <code>health-check</code> domain was triggered too early. This is usually an indicator for some code in the plugin or theme running too early. Translations should be loaded at the <code>init</code> action or later. Please see <a href="https://developer.wordpress.org/advanced-administration/debug/debug-wordpress/">Debugging in WordPress</a> for more information. (This message was added in version 6.7.0.) in /home/1204105.cloudwaysapps.com/vqnxseugmr/public_html/wp-includes/functions.php on line 6121
-Notice: Function _load_textdomain_just_in_time was called <strong>incorrectly</strong>. Translation loading for the <code>wp-all-import-pro</code> domain was triggered too early. This is usually an indicator for some code in the plugin or theme running too early. Translations should be loaded at the <code>init</code> action or later. Please see <a href="https://developer.wordpress.org/advanced-administration/debug/debug-wordpress/">Debugging in WordPress</a> for more information. (This message was added in version 6.7.0.) in /home/1204105.cloudwaysapps.com/vqnxseugmr/public_html/wp-includes/functions.php on line 6121
+WPAIP: Initialized tracking for Import ID 31
+WPAIP: Using manually counted stats (or last_run unavailable) for Import ID 31
+WPAIP (Send Data ID: 31): === BEFORE wp_remote_post ===
+WPAIP (Send Data ID: 31): Received RESPONSE. Code: 302
+WPAIP (Send Data ID: 31): Callback accepted (HTTP 302).
+WPAIP: Cleared temporary tracking data for Import ID 31
 Created	Updated	Skipped	Deleted	Changed Missing	Count
-0	0	30	0	0	30
+0	0	20	0	0	20

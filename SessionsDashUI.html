@@ -491,6 +491,9 @@
                       <button class="step-button danger hidden" id="button-cancel-import">
                           <i data-feather="x-circle" class="icon"></i><span class="button-text">Cancel Update</span>
                       </button>
+                      <button class="step-button secondary hidden" id="button-clear-cache-step">
+                          <i data-feather="x-circle" class="icon"></i><span class="button-text">Clear Website Cache</span>
+                      </button>
                    </div>
                 </div>
             </div>
@@ -673,6 +676,8 @@
                     break;
                 case 'not-recommended':
                     // Grey-out applied by class
+                    // Button remains enabled (disabled = false) to allow user to proceed if they choose
+                    // Visual styling is handled by CSS class .step.step-not-recommended .step-button.primary
                     break;
                 case 'active':
                     if (buttonPrimary) buttonPrimary.disabled = true;
